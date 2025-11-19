@@ -1,0 +1,16 @@
+# Extracted model files (use unrar to extract from .rar archives)
+model/*.pth
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Detection results
+result/
+temp/
+test/
+
+# Failed image list
+fail_img.txt
