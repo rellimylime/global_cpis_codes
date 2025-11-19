@@ -16,9 +16,9 @@ from datetime import datetime
 
 # Initialize Earth Engine
 try:
-    ee.Initialize()
-except:
-    print("Earth Engine not authenticated. Run: earthengine authenticate")
+    ee.Initialize(project='africa-irrigation-mine')
+except Exception as e:
+    print(f"Error initializing Earth Engine: {e}")
     exit(1)
 
 # ============ CONFIGURATION ============
@@ -144,9 +144,13 @@ def main():
         # Get image metadata
         props = image.getInfo()['properties']
         image_id = props.get('PRODUCT_ID', f'image_{i}')
-        date = props.get('GENERATION_TIME', 'unknown_date')[:10]
+        gen_time = props.get('GENERATION_TIME', None)
+        if gen_time:
+            from datetime import datetime
+            date = datetime.fromtimestamp(gen_time / 1000).strftime('%Y-%m-%d')
+        else:
+            date = props.get('SENSING_TIME', 'unknown_date')[:10] if isinstance(props.get('SENSING_TIME'), str) else 'unknown_date'        
         cloud_cover = props.get('CLOUDY_PIXEL_PERCENTAGE', 'unknown')
-
         description = f"S2_{date}_cloud{cloud_cover:.1f}_{i}"
 
         print(f"\nImage {i+1}:")
@@ -159,36 +163,36 @@ def main():
         print(f"  Export task started: {description}")
         print(f"  Check progress at: https://code.earthengine.google.com/tasks")
 
-    print("\n" + "=" * 80)
-    print("OPTION 2: Direct Download URLs (For small areas < 32MB)")
-    print("=" * 80)
-    print("\nGenerating download URLs (this may take a moment)...\n")
+    # print("\n" + "=" * 80)
+    # print("OPTION 2: Direct Download URLs (For small areas < 32MB)")
+    # print("=" * 80)
+    # print("\nGenerating download URLs (this may take a moment)...\n")
 
-    urls = []
-    for i in range(min(count, MAX_IMAGES or count)):
-        image = ee.Image(image_list.get(i))
-        props = image.getInfo()['properties']
-        date = props.get('GENERATION_TIME', 'unknown_date')[:10]
-        filename = f"sentinel2_{date}_{i}.tif"
+    # urls = []
+    # for i in range(min(count, MAX_IMAGES or count)):
+    #     image = ee.Image(image_list.get(i))
+    #     props = image.getInfo()['properties']
+    #     date = props.get('GENERATION_TIME', 'unknown_date')[:10]
+    #     filename = f"sentinel2_{date}_{i}.tif"
 
-        try:
-            url = download_to_local(image, AOI, filename, SCALE)
-            urls.append((filename, url))
-        except Exception as e:
-            print(f"Error generating URL for {filename}: {e}")
-            print("Area might be too large. Use Google Drive export instead.\n")
+    #     try:
+    #         url = download_to_local(image, AOI, filename, SCALE)
+    #         urls.append((filename, url))
+    #     except Exception as e:
+    #         print(f"Error generating URL for {filename}: {e}")
+    #         print("Area might be too large. Use Google Drive export instead.\n")
 
-    print("\n" + "=" * 80)
-    print("SUMMARY")
-    print("=" * 80)
-    print(f"\nImages found: {count}")
-    print(f"Images processed: {min(count, MAX_IMAGES or count)}")
-    print("\nNext steps:")
-    print("1. For Google Drive exports: Check https://code.earthengine.google.com/tasks")
-    print("2. For direct downloads: Copy the URLs above to your browser")
-    print("3. Save downloaded images to: imgs/")
-    print("4. Run: python demo.py")
-    print("\n")
+    # print("\n" + "=" * 80)
+    # print("SUMMARY")
+    # print("=" * 80)
+    # print(f"\nImages found: {count}")
+    # print(f"Images processed: {min(count, MAX_IMAGES or count)}")
+    # print("\nNext steps:")
+    # print("1. For Google Drive exports: Check https://code.earthengine.google.com/tasks")
+    # print("2. For direct downloads: Copy the URLs above to your browser")
+    # print("3. Save downloaded images to: imgs/")
+    # print("4. Run: python demo.py")
+    # print("\n")
 
 
 if __name__ == '__main__':
