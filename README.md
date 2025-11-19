@@ -1,6 +1,12 @@
-# globa_cpis_codes
- 
-Here are some demo codes for the detection of CPIS in Sentinel-2 images. 
+# Global CPI Detection
+
+Detection of Central Pivot Irrigation Systems (CPIs) in Sentinel-2 satellite images using deep learning.
+
+## Quick Start
+
+**For detecting CPIs across all of Africa:** See [README_AFRICA.md](README_AFRICA.md)
+
+**For testing on sample images:** See instructions below 
 
 ## Installation Requirements
 
@@ -16,19 +22,48 @@ Here are some demo codes for the detection of CPIS in Sentinel-2 images.
 
 
   
-## How to run this demo
+## How to Run Detection
 
-Once the installation is done, you can follow the steps below to run this demo.
+### 1. Extract the Model (One-time Setup)
 
-- Unzip the model file (in the subdirectory `model/`) into the same path.
-- Go to the root directory of this project in terminal and activate the corresponding virtual environment.
-- Run
+```bash
+cd model
+unrar x cascade_mask_rcnn_pointrend_cbam.part1.rar
+cd ..
+```
 
-  ```
-  python demo.py 
-  ```
+This creates `model/epoch_140.pth` (symlinked as `cascade_mask_rcnn_pointrend_cbam.pth`)
 
-- You will obtain the detection results of the sample images (in the subdirectory `imgs/`) in a new created subdirectory (`result/`).
-   
-   Note that the sample images are in GeoTiff format with four bands (R-G-B-NIR).
+### 2. Test on Sample Images
+
+```bash
+python demo.py
+```
+
+Results will be in `result/` directory.
+
+**Note:** Sample images are GeoTIFF format with 4 bands (Red-Green-Blue-NIR).
+
+### 3. Process Your Own Images
+
+Place your Sentinel-2 GeoTIFF files (4 bands: R-G-B-NIR) in `imgs/` directory and run `demo.py`.
+
+## Africa-Scale Detection
+
+To detect CPIs across all of Africa:
+
+**See [README_AFRICA.md](README_AFRICA.md)** for the complete workflow using Google Earth Engine.
+
+Quick summary:
+```bash
+# 1. Setup Google Earth Engine
+pip install earthengine-api
+earthengine authenticate
+
+# 2. Download Africa tiles
+python download_africa_gee.py
+
+# 3. Process downloaded tiles
+python batch_detect_africa.py
+```
  
