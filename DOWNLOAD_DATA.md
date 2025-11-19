@@ -8,37 +8,43 @@ ArcGIS portals often only offer PNG exports, but the model needs **4-band GeoTIF
 
 ## Solution: 3 Options
 
-### Option 1: Simple Python Script (Recommended)
+**⚠️ IMPORTANT**: If you get a "403 Forbidden" error, see `QUICK_START_DOWNLOAD.md` for the updated 2024 API method!
+
+
+
+### Option 1: Automated Python Script (2024 API)
 
 **Pros**: Automated, downloads exactly what you need
 **Cons**: Requires Python setup and API credentials
 
-1. **Install required package**:
+**Note**: The old `sentinelsat` library no longer works! Use the new script instead.
+
+1. **Install required packages**:
    ```bash
-   pip install sentinelsat
+   pip install requests oauthlib
    ```
 
 2. **Create free account** at: https://dataspace.copernicus.eu/
 
-3. **Edit configuration** in `download_sentinel2_simple.py`:
-   - Add your username/password (lines 21-22)
-   - Set your area coordinates (line 27)
-   - Adjust date range if needed (lines 30-31)
+3. **Edit configuration** in `download_sentinel2_cdse.py`:
+   - Add your username/password (lines 16-17)
+   - Set your area coordinates (line 21)
+   - Adjust date range if needed (lines 24-25)
 
 4. **Run the downloader**:
    ```bash
-   python download_sentinel2_simple.py
+   python download_sentinel2_cdse.py
    ```
 
 5. **Process the downloads** (extract and stack bands):
    ```bash
    # First, unzip the downloaded .zip files
-   cd imgs
+   cd sentinel2_products
    unzip '*.zip'
 
    # Then stack the bands into 4-band GeoTIFF
    cd ..
-   python process_sentinel2_bands.py imgs/
+   python process_sentinel2_bands.py sentinel2_products/
    ```
 
 6. **Run detection**:
