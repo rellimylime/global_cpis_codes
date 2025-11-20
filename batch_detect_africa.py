@@ -9,6 +9,7 @@ Usage:
 """
 
 import os
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'TRUE'
 from tools.detect_scripts import detect_sentinel_batch
 
 

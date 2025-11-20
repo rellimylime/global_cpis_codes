@@ -51,7 +51,7 @@ def build_mmdet_model(
     # build the model and load checkpoint
     model = build_detector(cfg.model, train_cfg=None, test_cfg=cfg.test_cfg)
     fp16_cfg = cfg.get('fp16', None)
-    if fp16_cfg is not None:
+    if fp16_cfg is not None and torch.cuda.is_available():
         wrap_fp16_model(model)
     checkpoint = load_checkpoint(model, checkpoint, map_location='cpu')
     if fuse_conv_bn:

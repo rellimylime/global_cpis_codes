@@ -25,7 +25,7 @@ from datetime import datetime
 
 # Initialize Earth Engine
 try:
-    ee.Initialize()
+    ee.Initialize(project="africa-irrigation-mine")
     print("✓ Earth Engine initialized")
 except:
     print("ERROR: Earth Engine not authenticated.")
