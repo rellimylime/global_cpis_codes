@@ -162,35 +162,77 @@ def export_tile(tile, composite, folder):
     return task, description
 
 
+def load_export_progress():
+    """Load record of which tiles have been exported."""
+    progress_file = 'gee_export_progress.json'
+
+    if os.path.exists(progress_file):
+        with open(progress_file, 'r') as f:
+            return json.load(f)
+
+    return {
+        'exported_tile_ids': [],
+        'failed_tile_ids': [],
+        'total_exported': 0,
+        'export_history': []
+    }
+
+
+def save_export_progress(progress):
+    """Save record of exported tiles."""
+    with open('gee_export_progress.json', 'w') as f:
+        json.dump(progress, f, indent=2)
+
+
 def main():
     print("=" * 80)
     print("Africa-Scale Sentinel-2 Download via Google Earth Engine")
     print("=" * 80)
+
+    # Load previous export progress
+    export_progress = load_export_progress()
+    already_exported = set(export_progress['exported_tile_ids'])
+
+    if already_exported:
+        print(f"\n✓ Found {len(already_exported)} previously exported tiles")
 
     # Create grid
     print(f"\n1. Creating grid...")
     print(f"   Region: {AFRICA_BBOX}")
     print(f"   Grid size: {GRID_SIZE}° (~{int(GRID_SIZE * 111)}km)")
 
-    tiles = create_grid(AFRICA_BBOX, GRID_SIZE)
-    print(f"   Total tiles: {len(tiles)}")
+    all_tiles = create_grid(AFRICA_BBOX, GRID_SIZE)
+    print(f"   Total tiles: {len(all_tiles)}")
 
     # Filter ocean tiles if requested
     if SKIP_OCEAN_TILES:
-        tiles_before = len(tiles)
-        tiles = [t for t in tiles if not is_mostly_ocean(t['center_lon'], t['center_lat'])]
-        print(f"   Filtered ocean tiles: {tiles_before} → {len(tiles)} tiles")
+        tiles_before = len(all_tiles)
+        all_tiles = [t for t in all_tiles if not is_mostly_ocean(t['center_lon'], t['center_lat'])]
+        print(f"   Filtered ocean tiles: {tiles_before} → {len(all_tiles)} tiles")
+
+    # Skip already exported tiles
+    tiles = [t for t in all_tiles if t['id'] not in already_exported]
+
+    print(f"\n   Already exported: {len(already_exported)}")
+    print(f"   Remaining: {len(tiles)}")
+    print(f"   Progress: {len(already_exported)}/{len(all_tiles)} ({100*len(already_exported)/len(all_tiles):.1f}%)")
+
+    if len(tiles) == 0:
+        print("\n✓ All tiles have been exported!")
+        print(f"   Total: {len(all_tiles)} tiles")
+        return
 
     # Estimate
     est_size_gb = len(tiles) * 0.5  # ~500MB per tile
-    print(f"\n   Estimated total size: ~{est_size_gb:.0f} GB")
+    print(f"\n   Estimated size for remaining: ~{est_size_gb:.0f} GB")
     print(f"   Google Drive folder: {EXPORT_FOLDER}/")
 
     # Limit exports per run
-    if len(tiles) > MAX_EXPORTS_PER_RUN:
-        print(f"\n   NOTE: Processing first {MAX_EXPORTS_PER_RUN} tiles")
-        print(f"         (You can run this script multiple times)")
-        tiles = tiles[:MAX_EXPORTS_PER_RUN]
+    batch_size = min(len(tiles), MAX_EXPORTS_PER_RUN)
+    tiles = tiles[:batch_size]
+
+    print(f"\n   Exporting next batch: {batch_size} tiles")
+    print(f"   Tile IDs: {tiles[0]['id']} to {tiles[-1]['id']}")
 
     response = input(f"\n   Start exports for {len(tiles)} tiles? (yes/no): ")
     if response.lower() != 'yes':
@@ -248,11 +290,30 @@ def main():
     print("\nExport tasks will run in the background (may take hours/days).")
     print("You can close this script - tasks will continue on GEE servers.")
 
-    # Save metadata
+    # Update export progress
+    successful_tile_ids = [t['id'] for t in successful_tiles]
+    failed_tile_ids = [t['id'] for t in failed_tiles]
+
+    export_progress['exported_tile_ids'].extend(successful_tile_ids)
+    export_progress['failed_tile_ids'].extend(failed_tile_ids)
+    export_progress['total_exported'] = len(export_progress['exported_tile_ids'])
+
+    export_progress['export_history'].append({
+        'timestamp': datetime.now().isoformat(),
+        'batch_size': len(tiles),
+        'successful': len(successful_tiles),
+        'failed': len(failed_tiles),
+        'tile_ids': successful_tile_ids
+    })
+
+    save_export_progress(export_progress)
+    print(f"\n✓ Export progress saved to: gee_export_progress.json")
+
+    # Save batch metadata
     metadata = {
         'year': YEAR,
         'grid_size': GRID_SIZE,
-        'total_tiles': len(tiles),
+        'batch_size': len(tiles),
         'successful': len(successful_tiles),
         'failed': len(failed_tiles),
         'timestamp': datetime.now().isoformat(),
@@ -260,35 +321,42 @@ def main():
         'tasks': [(tid, desc) for tid, desc, _ in tasks]
     }
 
-    metadata_file = f'africa_tiles_{YEAR}_metadata.json'
+    metadata_file = f'africa_tiles_{YEAR}_batch_{len(export_progress["export_history"])}.json'
     with open(metadata_file, 'w') as f:
         json.dump(metadata, f, indent=2)
 
-    print(f"\nMetadata saved to: {metadata_file}")
+    print(f"✓ Batch metadata saved to: {metadata_file}")
+
+    # Calculate remaining tiles
+    total_tiles_in_africa = len(all_tiles)
+    remaining_tiles = total_tiles_in_africa - len(export_progress['exported_tile_ids'])
+
+    print("\n" + "=" * 80)
+    print("EXPORT PROGRESS")
+    print("=" * 80)
+    print(f"\nTotal tiles for Africa: {total_tiles_in_africa}")
+    print(f"Exported so far: {len(export_progress['exported_tile_ids'])}")
+    print(f"Remaining: {remaining_tiles}")
+    print(f"Progress: {100*len(export_progress['exported_tile_ids'])/total_tiles_in_africa:.1f}%")
 
     print("\n" + "=" * 80)
     print("NEXT STEPS")
     print("=" * 80)
     print("\n1. Wait for exports to complete (check GEE tasks page)")
     print(f"2. Download tiles from Google Drive → {EXPORT_FOLDER}/")
-    print("3. Move .tif files to imgs/ directory:")
-    print("   mv ~/Downloads/*.tif imgs/")
-    print("4. Run batch detection:")
+    print("3. Process tiles:")
+    print("   python process_africa_tiles.py --source ~/Downloads/Africa_CPI_Sentinel2")
     print("   python batch_detect_africa.py")
+
+    if remaining_tiles > 0:
+        print(f"\n4. Export next batch ({remaining_tiles} tiles remaining):")
+        print("   python download_africa_gee.py")
+        print(f"\n   This will automatically export the next {min(remaining_tiles, MAX_EXPORTS_PER_RUN)} tiles")
+    else:
+        print("\n✓ ALL TILES EXPORTED! No more batches needed.")
+
     print("\nTip: You can download and process tiles incrementally!")
     print("     No need to wait for all exports to finish.\n")
-
-    # If there are more tiles, remind user
-    total_tiles = len(create_grid(AFRICA_BBOX, GRID_SIZE))
-    if SKIP_OCEAN_TILES:
-        total_tiles = len([t for t in create_grid(AFRICA_BBOX, GRID_SIZE)
-                          if not is_mostly_ocean(t['center_lon'], t['center_lat'])])
-
-    if len(tiles) < total_tiles:
-        print("=" * 80)
-        print(f"NOTE: {total_tiles - len(tiles)} tiles remaining")
-        print("Edit MAX_EXPORTS_PER_RUN or modify script to process remaining tiles")
-        print("=" * 80)
 
 
 if __name__ == '__main__':
