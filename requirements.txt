@@ -1,0 +1,38 @@
+# CPI Detection Requirements
+# Python 3.7, CUDA 10.1
+
+# Deep Learning
+torch==1.6.0+cu101
+torchvision==0.7.0+cu101
+
+# MMDetection and dependencies
+mmcv-full==1.2.4
+mmdet==2.7.0
+
+# Geospatial
+gdal==3.2.0
+shapely==1.7.1
+geopandas>=0.9.0
+rasterio>=1.2.0
+
+# Google Earth Engine
+earthengine-api>=0.1.250
+
+# Image processing
+opencv-python>=4.5.0
+Pillow>=8.0.0
+
+# Utilities
+numpy>=1.19.0
+scipy>=1.5.0
+matplotlib>=3.3.0
+tqdm>=4.60.0
+
+# Note: Install PyTorch first with specific CUDA version:
+# pip install torch==1.6.0+cu101 torchvision==0.7.0+cu101 -f https://download.pytorch.org/whl/torch_stable.html
+#
+# Then install mmcv with matching versions:
+# pip install mmcv-full==1.2.4 -f https://download.openmmlab.com/mmcv/dist/cu101/torch1.6.0/index.html
+#
+# Then install remaining packages:
+# pip install -r requirements.txt
