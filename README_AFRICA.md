@@ -48,19 +48,32 @@ This will:
 
 Monitor progress: https://code.earthengine.google.com/tasks
 
-### Step 3: Download Tiles from Google Drive
+### Step 3: Download and Track Tiles
 
-As tiles finish exporting:
+**Systematic Processing (Recommended):**
 
-1. Go to your Google Drive → `Africa_CPI_Sentinel2/` folder
-2. Download completed .tif files
-3. Move them to the `imgs/` directory:
+Use the tracking script to process tiles in batches:
 
 ```bash
-mv ~/Downloads/africa_s2_2021_tile_*.tif imgs/
+# Check what needs processing (use your Google Drive folder path)
+python process_africa_tiles.py --source ~/Downloads/Africa_CPI_Sentinel2 --dry-run
+
+# Move next batch (e.g., 10 tiles) to imgs/
+python process_africa_tiles.py --source ~/Downloads/Africa_CPI_Sentinel2 --batch-size 10
 ```
 
-**Tip:** You don't need to wait for all tiles! Download and process in batches.
+This script:
+- Tracks which tiles have been processed
+- Moves unprocessed tiles to `imgs/` in batches
+- Shows progress: "64/1000 (6.4%)"
+- Never loses track of what's done
+
+**Or Manual Method:**
+
+```bash
+# Download from Google Drive and move to imgs/
+mv ~/Downloads/africa_s2_2021_tile_*.tif imgs/
+```
 
 ### Step 4: Run CPI Detection
 
@@ -72,26 +85,43 @@ python batch_detect_africa.py
 This will:
 - Load the CPI detection model
 - Process each image (~2-5 min per image on GPU, ~1-2 hours on CPU)
-- Save results to `result_africa/` directory
+- Save results to `result_africa/[tile_name]/`
+- Skip already-processed tiles
 
-Each result includes:
-- Detected CPI polygons
+Each result folder includes:
+- Detected CPI polygons (shapefiles)
 - Confidence scores
-- Geospatial files (shapefiles/GeoJSON)
+- Geospatial metadata
 
-### Step 5: Process More Tiles
+### Step 5: Export and Process Next Batch
 
-Download more tiles from Google Drive and repeat:
+**Continue until all of Africa is complete:**
 
 ```bash
-# Download more from Google Drive
-mv ~/Downloads/africa_s2_2021_tile_*.tif imgs/
+# Export next 50 tiles from GEE (automatically resumes)
+python download_africa_gee.py
 
-# Detect CPIs
+# Wait for exports, then download and process
+python process_africa_tiles.py --source ~/Downloads/Africa_CPI_Sentinel2
 python batch_detect_africa.py
+
+# Repeat ~15-20 times for all ~1000 tiles
 ```
 
-The batch script skips already-processed images automatically.
+### Step 6: Merge All Results
+
+Once you've processed many tiles, merge into one Africa-wide shapefile:
+
+```bash
+python merge_africa_results.py
+```
+
+**Output:**
+- `africa_cpis_2021.shp` - Single shapefile with ALL detected CPIs
+- `africa_cpis_2021_summary.json` - Statistics (total CPIs, area, coverage)
+- Includes attributes: tile_id, confidence, area_ha
+
+You can run this anytime to merge all results processed so far.
 
 ## Configuration Options
 
@@ -172,21 +202,53 @@ earthengine authenticate
 - Check back later
 - Exports continue even if you close browser
 
+## Progress Tracking
+
+The workflow automatically tracks your progress:
+
+**Export Progress:**
+- `gee_export_progress.json` - Which tiles have been exported from GEE
+- Shows: 64/1000 tiles exported (6.4%)
+- `download_africa_gee.py` automatically resumes from last export
+
+**Processing Progress:**
+- `africa_processing_progress.json` - Which tiles have been processed
+- Tracks: processed, in_progress, remaining tiles
+- `process_africa_tiles.py` uses this to avoid reprocessing
+
+**Check Progress:**
+```bash
+# See export progress
+cat gee_export_progress.json | grep total_exported
+
+# See processing progress
+cat africa_processing_progress.json | grep -E "processed|total"
+
+# Count processed results
+ls result_africa/ | wc -l
+```
+
 ## File Organization
 
 ```
 global_cpis_codes/
-├── imgs/                              # Downloaded Sentinel-2 tiles go here
-│   ├── africa_s2_2021_tile_0001.tif
-│   ├── africa_s2_2021_tile_0002.tif
+├── imgs/                                   # Current batch (10-20 tiles)
+│   ├── africa_s2_2021_tile_0042.tif
 │   └── ...
-├── result_africa/                     # Detection results
-│   ├── africa_s2_2021_tile_0001/
-│   ├── africa_s2_2021_tile_0002/
+├── result_africa/                          # Detection results
+│   ├── africa_s2_2021_tile_0042/          # Per-tile results
+│   │   ├── cpis.shp                       # Detected CPIs (shapefile)
+│   │   └── ...
 │   └── ...
-├── download_africa_gee.py             # Download script
-├── batch_detect_africa.py             # Detection script
-└── africa_tiles_2021_metadata.json    # Tile metadata
+├── africa_cpis_2021.shp                   # FINAL MERGED SHAPEFILE
+├── africa_cpis_2021_summary.json          # Statistics
+├── gee_export_progress.json               # Export tracking
+├── africa_processing_progress.json        # Processing tracking
+└── Scripts:
+    ├── download_africa_gee.py             # Export tiles from GEE
+    ├── process_africa_tiles.py            # Move tiles in batches
+    ├── batch_detect_africa.py             # Run detection
+    └── merge_africa_results.py            # Merge into one shapefile
 ```
 
 ## Tips for Large-Scale Processing

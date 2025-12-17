@@ -9,8 +9,25 @@ __pycache__/
 
 # Detection results
 result/
+result_africa/
 temp/
 test/
 
+# Downloaded tiles
+imgs/*.tif
+!imgs/sample*.tif  # Keep sample images
+
+# Progress tracking files (user-specific)
+gee_export_progress.json
+africa_processing_progress.json
+africa_tiles_2021_*.json
+
+# Final outputs (user-specific)
+africa_cpis_2021.*
+africa_cpis_2021_summary.json
+
 # Failed image list
 fail_img.txt
+
+# HPC-specific config (user customizes this)
+hpc_config.pyc
