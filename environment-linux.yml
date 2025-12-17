@@ -1,0 +1,40 @@
+# Conda environment for Linux HPC (platform-agnostic)
+# Use this on HPC clusters running Linux
+
+name: cpi_detection
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.7
+  - cudatoolkit=10.1
+  - cudnn=7.6.5
+  - pytorch=1.6.0
+  - torchvision=0.7.0
+
+  # Geospatial
+  - gdal=3.2.0
+  - geos
+  - proj
+  - libspatialindex
+
+  # Scientific computing
+  - numpy>=1.19.0
+  - scipy>=1.5.0
+  - matplotlib>=3.3.0
+  - pandas
+
+  # Pip packages
+  - pip
+  - pip:
+    - mmcv-full==1.2.4
+    - mmdet==2.7.0
+    - shapely==1.7.1
+    - geopandas>=0.9.0
+    - rasterio>=1.2.0
+    - earthengine-api>=0.1.250
+    - opencv-python>=4.5.0
+    - Pillow>=8.0.0
+    - tqdm>=4.60.0
