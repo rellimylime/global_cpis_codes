@@ -27,6 +27,11 @@ def union_segm(
         save_path=None,
 
 ):
+    
+    if not js_data:
+        print("No detection results.")
+        return None
+    
     def __as_polygon(segm):
         segms = [shapely.geometry.asPolygon(np.array(s, dtype=float).reshape(-1, 2).tolist()) for s in segm if len(s)>=6]
         areas = [s.area for s in segms]
