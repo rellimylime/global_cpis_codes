@@ -27,6 +27,11 @@ def union_segm(
         save_path=None,
 
 ):
+    
+    if not js_data:
+        print("No detection results.")
+        return None
+    
     def __as_polygon(segm):
         segms = [shapely.geometry.asPolygon(np.array(s, dtype=np.float).reshape(-1, 2).tolist()) for s in segm if len(s)>=6]
         areas = [s.area for s in segms]
@@ -93,6 +98,10 @@ def detect_result_to_json(
         dataset_img_path,
 ):
     cocoGt = COCO(dataset_js_file)
+
+    # Add this:
+    if 'info' not in cocoGt.dataset:
+        cocoGt.dataset['info'] = {}
 
     try:
         cocoDt = cocoGt.loadRes(res_js_file)

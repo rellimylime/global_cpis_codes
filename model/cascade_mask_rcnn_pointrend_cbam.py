@@ -43,7 +43,7 @@ test_pipeline = [
 ]
 data = dict(
     samples_per_gpu=2,
-    workers_per_gpu=4,
+    workers_per_gpu=0,
     train=dict(
         type='IrLandDataset',
         ann_file='datasets/Ir_Land/all/annotations/two_cats/train.json',
@@ -365,6 +365,6 @@ log_level = 'INFO'
 load_from = None
 resume_from = '/home/cfcomputer/DetectionProject.bak/work_dirs/home/cfcomputer/DetectionProject.bak/Ir_Land/cascade/epoch_70.pth'
 workflow = [('train', 1)]
-fp16 = dict(loss_scale=512.0)
+# fp16 = dict(loss_scale=512.0)
 gpu_ids = range(0, 1)
 work_dir = './work_dirs/home/cfcomputer/DetectionProject.bak/Ir_Land/cascade/cascade_mask_rcnn_pointrend_cbam'

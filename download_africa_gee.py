@@ -25,7 +25,7 @@ from datetime import datetime
 
 # Initialize Earth Engine
 try:
-    ee.Initialize()
+    ee.Initialize(project="africa-irrigation-mine")
     print("✓ Earth Engine initialized")
 except:
     print("ERROR: Earth Engine not authenticated.")
@@ -168,11 +168,16 @@ def load_export_progress():
 
     if os.path.exists(progress_file):
         with open(progress_file, 'r') as f:
-            return json.load(f)
+            progress = json.load(f)
+        
+            if 'skipped_tile_ids' not in progress:
+                progress['skipped_tile_ids'] = []
+            return progress
 
     return {
         'exported_tile_ids': [],
         'failed_tile_ids': [],
+        'skipped_tile_ids': [],
         'total_exported': 0,
         'export_history': []
     }
@@ -183,8 +188,54 @@ def save_export_progress(progress):
     with open('gee_export_progress.json', 'w') as f:
         json.dump(progress, f, indent=2)
 
+def filter_tiles_by_shapefile(tiles, shapefile_path, cache_file='arid_tile_ids.json'):
+    """Filter tiles to only those intersecting with arid regions."""
+    
+    # Check cache first
+    if os.path.exists(cache_file):
+        print(f"\n✓ Loading cached arid tile IDs from {cache_file}")
+        with open(cache_file, 'r') as f:
+            arid_tile_ids = set(json.load(f))
+        filtered = [t for t in tiles if t['id'] in arid_tile_ids]
+        print(f"  {len(tiles)} total tiles → {len(filtered)} in arid regions (cached)")
+        return filtered
+    
+    # First time - do the expensive computation
+    import geopandas as gpd
+    from shapely.geometry import box
+    
+    print(f"\nFiltering tiles by shapefile: {shapefile_path}")
+    print("  (This is slow the first time, but results will be cached)")
+    
+    arid_gdf = gpd.read_file(shapefile_path)
+    if arid_gdf.crs != 'EPSG:4326':
+        arid_gdf = arid_gdf.to_crs('EPSG:4326')
+    
+    arid_union = arid_gdf.union_all()
+    
+    filtered = []
+    arid_tile_ids = []
+    
+    for tile in tiles:
+        bbox = tile['bbox']
+        tile_poly = box(bbox[0], bbox[1], bbox[2], bbox[3])
+        
+        if tile_poly.intersects(arid_union):
+            filtered.append(tile)
+            arid_tile_ids.append(tile['id'])
+    
+    # Save for next time
+    with open(cache_file, 'w') as f:
+        json.dump(arid_tile_ids, f)
+    
+    print(f"  {len(tiles)} total tiles → {len(filtered)} in arid regions")
+    print(f"  ✓ Cached to {cache_file}")
+    return filtered
 
 def main():
+
+    skipped_tiles = []
+
     print("=" * 80)
     print("Africa-Scale Sentinel-2 Download via Google Earth Engine")
     print("=" * 80)
@@ -192,6 +243,9 @@ def main():
     # Load previous export progress
     export_progress = load_export_progress()
     already_exported = set(export_progress['exported_tile_ids'])
+    already_skipped = set(export_progress.get('skipped_tile_ids', []))
+    already_processed = already_exported | already_skipped
+
 
     if already_exported:
         print(f"\n✓ Found {len(already_exported)} previously exported tiles")
@@ -204,6 +258,9 @@ def main():
     all_tiles = create_grid(AFRICA_BBOX, GRID_SIZE)
     print(f"   Total tiles: {len(all_tiles)}")
 
+    # Filter by arid regions shapefile
+    all_tiles = filter_tiles_by_shapefile(all_tiles, 'Africa_Arid_Regions_All-shp')
+
     # Filter ocean tiles if requested
     if SKIP_OCEAN_TILES:
         tiles_before = len(all_tiles)
@@ -211,11 +268,16 @@ def main():
         print(f"   Filtered ocean tiles: {tiles_before} → {len(all_tiles)} tiles")
 
     # Skip already exported tiles
-    tiles = [t for t in all_tiles if t['id'] not in already_exported]
+    tiles = [t for t in all_tiles if t['id'] not in already_processed]
+
+    already_skipped = set(export_progress.get('skipped_tile_ids', []))
+    total_processed = len(already_exported) + len(already_skipped)
 
     print(f"\n   Already exported: {len(already_exported)}")
+    print(f"   Skipped (no images): {len(already_skipped)}")
+    print(f"   Total processed: {total_processed}")
     print(f"   Remaining: {len(tiles)}")
-    print(f"   Progress: {len(already_exported)}/{len(all_tiles)} ({100*len(already_exported)/len(all_tiles):.1f}%)")
+    print(f"   Progress: {total_processed}/{len(all_tiles)} ({100*total_processed/len(all_tiles):.1f}%)")
 
     if len(tiles) == 0:
         print("\n✓ All tiles have been exported!")
@@ -264,7 +326,7 @@ def main():
 
             if count == 0:
                 print(f"  ⚠ No images (skipping)")
-                failed_tiles.append(tile)
+                skipped_tiles.append(tile)
                 continue
 
             # Export
@@ -282,7 +344,9 @@ def main():
     print("Export Tasks Started!")
     print("=" * 80)
     print(f"\nSuccessful: {len(successful_tiles)}/{len(tiles)} tiles")
-    print(f"Failed/Skipped: {len(failed_tiles)}/{len(tiles)} tiles")
+    print(f"Failed: {len(failed_tiles)}/{len(tiles)} tiles")
+    print(f"Skipped: {len(skipped_tiles)}/{len(tiles)} tiles")
+
 
     print(f"\nAll exports are queued to Google Drive folder: {EXPORT_FOLDER}/")
     print("\nMonitor progress at: https://code.earthengine.google.com/tasks")
@@ -295,6 +359,7 @@ def main():
     failed_tile_ids = [t['id'] for t in failed_tiles]
 
     export_progress['exported_tile_ids'].extend(successful_tile_ids)
+    export_progress['skipped_tile_ids'].extend([t['id'] for t in skipped_tiles]) 
     export_progress['failed_tile_ids'].extend(failed_tile_ids)
     export_progress['total_exported'] = len(export_progress['exported_tile_ids'])
 
@@ -329,15 +394,18 @@ def main():
 
     # Calculate remaining tiles
     total_tiles_in_africa = len(all_tiles)
-    remaining_tiles = total_tiles_in_africa - len(export_progress['exported_tile_ids'])
+    total_processed = len(export_progress['exported_tile_ids']) + len(export_progress.get('skipped_tile_ids', []))
+    remaining_tiles = total_tiles_in_africa - total_processed
 
     print("\n" + "=" * 80)
     print("EXPORT PROGRESS")
     print("=" * 80)
     print(f"\nTotal tiles for Africa: {total_tiles_in_africa}")
-    print(f"Exported so far: {len(export_progress['exported_tile_ids'])}")
+    print(f"Exported: {len(export_progress['exported_tile_ids'])}")
+    print(f"Skipped (no images): {len(export_progress.get('skipped_tile_ids', []))}")
+    print(f"Total processed: {total_processed}")
     print(f"Remaining: {remaining_tiles}")
-    print(f"Progress: {100*len(export_progress['exported_tile_ids'])/total_tiles_in_africa:.1f}%")
+    print(f"Progress: {100*total_processed/total_tiles_in_africa:.1f}%")
 
     print("\n" + "=" * 80)
     print("NEXT STEPS")
