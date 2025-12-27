@@ -31,3 +31,6 @@ fail_img.txt
 
 # HPC-specific config (user customizes this)
 hpc_config.pyc
+
+# GEE demo download script
+download_sentinel2_gee.py
