@@ -28,7 +28,7 @@ def union_segm(
 
 ):
     def __as_polygon(segm):
-        segms = [shapely.geometry.asPolygon(np.array(s, dtype=float).reshape(-1, 2).tolist()) for s in segm if len(s)>=6]
+        segms = [shapely.geometry.Polygon(np.array(s, dtype=float).reshape(-1, 2).tolist()) for s in segm if len(s)>=6]
         areas = [s.area for s in segms]
         idx = np.argmax(areas)
         polygon = segms[idx]
