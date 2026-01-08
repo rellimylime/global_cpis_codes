@@ -1,0 +1,65 @@
+#!/bin/bash -l
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=4
+#SBATCH --mem=32G
+#SBATCH --time=24:00:00
+#SBATCH --job-name=africa_cpi_loop
+#SBATCH --output=slurm-%j.out
+
+# =========================================================
+# STEP 1: Navigate to the submission directory
+# =========================================================
+cd $SLURM_SUBMIT_DIR
+echo "Running on host: $(hostname)"
+echo "Starting job at: $(date)"
+
+# =========================================================
+# STEP 2: Load your Python Environment (EDIT THIS!)
+# =========================================================
+# You must uncomment the line that matches your cluster setup.
+# If you don't know, try 'module load python' first.
+
+# Option A: If you use Modules
+# module load python
+# module load gdal
+
+# Option B: If you use Conda (most likely)
+module load anaconda
+source activate base
+conda activate cpi_detection2
+
+# Debug: Print python version to make sure it loaded
+python --version
+
+# =========================================================
+# STEP 3: The Pipeline Loop
+# =========================================================
+echo "Starting Pipeline Loop..."
+
+while true; do
+    echo "------------------------------------------------"
+    echo "Starting new batch at $(date)"
+    
+    # Run the Python master script
+    # It will process 1 batch, delete files, and export new ones
+    python -u pipeline_master.py
+    
+    # Capture the exit status (0 = success, anything else = crash)
+    EXIT_CODE=$?
+    
+    # If the script crashes (returns non-zero), stop the job
+    if [ $EXIT_CODE -ne 0 ]; then
+        echo "CRITICAL ERROR: Pipeline crashed with code $EXIT_CODE"
+        echo "Stopping loop to prevent issues."
+        break
+    fi
+    
+    # Optional: Logic to stop if "ALL TILES COMPLETED"
+    # But for now, we rely on the script to just output "Waiting..." 
+    # if it runs out of work.
+    
+    echo "Batch finished. Resting for 10 seconds..."
+    sleep 10
+done
+
+echo "Job finished at $(date)"

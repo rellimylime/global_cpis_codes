@@ -72,7 +72,7 @@ def detect_sentinel(
         ref_json=ref_json,
         nms_iou_thr=nms_thr,
         nms_merge_cats=nms_merge_cats,
-
+        score_thr=score_thr
     )
 
     print()

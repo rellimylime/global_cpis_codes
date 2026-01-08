@@ -32,5 +32,15 @@ fail_img.txt
 # HPC-specific config (user customizes this)
 hpc_config.pyc
 
-# GEE demo download script
-download_sentinel2_gee.py
+# Batch image files
+imgs_batch/*
+imgs_batch_u8/*
+
+# Temporary output files
+*.out
+
+# Environment files
+environment.yml
+
+# Pipeline state
+pipeline_state.json

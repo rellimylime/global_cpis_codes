@@ -23,73 +23,135 @@ def union_segm(
         ori_img_path,
         ref_json,
         merge_cats=False,
-        score_thr=[0.3,0.85],
+        score_thr=[0.3, 0.85],
         save_path=None,
-
 ):
-    
+    # 0) no detections at all
     if not js_data:
-        print("No detection results.")
+        print("No detection results (empty js_data). Skipping visualization.")
         return None
-    
+
     def __as_polygon(segm):
-        segms = [shapely.geometry.Polygon(np.array(s, dtype=float).reshape(-1, 2).tolist()) for s in segm if len(s)>=6]
-        areas = [s.area for s in segms]
-        idx = np.argmax(areas)
-        polygon = segms[idx]
-        return polygon
+        # segm is list-of-lists, each inner list is flattened [x1,y1,x2,y2,...]
+        segms = [
+            shapely.geometry.Polygon(
+                np.array(s, dtype=float).reshape(-1, 2).tolist()
+            )
+            for s in segm
+            if s is not None and len(s) >= 6
+        ]
+        # filter invalid/empty polys
+        segms = [p for p in segms if p.is_valid and (not p.is_empty)]
+        if not segms:
+            return None
+        areas = [p.area for p in segms]
+        return segms[int(np.argmax(areas))]
 
     stdout_on()
-    res_poly = dict()
+
+    shp_path = os.path.join(save_path, "seg")
+    os.makedirs(shp_path, mode=0o777, exist_ok=True)
+
+    # 1) build polygons + scores, skipping empty segmentations
     polys = []
-    shp_path = os.path.join(save_path,"seg")
-    os.makedirs(shp_path, mode = 0o777, exist_ok = True)
+    scores = []
     for j in js_data:
-        poly = __as_polygon(j['segmentation'])
+        segm = j.get("segmentation", None)
+        if not segm:
+            continue
+        poly = __as_polygon(segm)
+        if poly is None:
+            continue
         polys.append(poly)
-    score = np.array([s['score'] for s in js_data])
+        scores.append(float(j.get("score", 0.0)))
+
+    if not polys:
+        print("No valid polygons after parsing. Skipping visualization.")
+        return None
+
+    score = np.array(scores, dtype=float)
+
+    # 2) for each threshold, union and draw
+    last_save_file = None
     for st in score_thr:
         idxs = score >= st
-        polygons = shapely.ops.unary_union([p for i, p in zip(idxs, polys) if i])
-        res_poly[st] = shapely.geometry.mapping(polygons)
-        # if res_poly[st]['type'] is 'Polygon':
-        #     res_poly = (res_poly)
+        keep = [p for keep_flag, p in zip(idxs, polys) if keep_flag]
 
-    for st, geojs in res_poly.items():
+        if not keep:
+            print(f"No detections at score >= {st}. Skipping this threshold.")
+            continue
+
+        unioned = shapely.ops.unary_union(keep)
+        if unioned.is_empty:
+            print(f"Union is empty at score >= {st}. Skipping this threshold.")
+            continue
+
+        # Normalize unioned geometry into a list of Polygon objects
+        poly_list = []
+        if unioned.geom_type == "Polygon":
+            poly_list = [unioned]
+        elif unioned.geom_type == "MultiPolygon":
+            poly_list = list(unioned.geoms)
+        elif unioned.geom_type == "GeometryCollection":
+            poly_list = [g for g in unioned.geoms if g.geom_type in ("Polygon", "MultiPolygon")]
+            # flatten any MultiPolygons inside the collection
+            flat = []
+            for g in poly_list:
+                if g.geom_type == "Polygon":
+                    flat.append(g)
+                else:
+                    flat.extend(list(g.geoms))
+            poly_list = flat
+        else:
+            print(f"Union geometry type {unioned.geom_type} not supported. Skipping.")
+            continue
+
+        if not poly_list:
+            print(f"No drawable polygons at score >= {st}. Skipping.")
+            continue
+
         coco = COCO(ref_json)
-        str = os.path.splitext(os.path.split(ori_img_path)[1])[0]
+        base = os.path.splitext(os.path.split(ori_img_path)[1])[0]
         image = io.imread(ori_img_path)
-        seg = [
-            {
-                "segmentation": [
-                ]
-            }
-        ]
-        for idx in range(len(geojs['coordinates'])):
 
-            points  = list(geojs['coordinates'][idx][0])
-            polygon = []
-            for point in points:
-                polygon.append(point[0])
-                polygon.append(point[1])
+        seg = [{"segmentation": []}]
 
-            seg[0]["segmentation"].append(polygon)
+        # Each polygon exterior coords -> COCO expects [x1,y1,x2,y2,...]
+        for p in poly_list:
+            coords = list(p.exterior.coords)
+            if len(coords) < 3:
+                continue
+            flat = []
+            for x, y in coords:
+                flat.append(float(x))
+                flat.append(float(y))
+            # COCO segmentation needs at least 3 points => 6 numbers
+            if len(flat) >= 6:
+                seg[0]["segmentation"].append(flat)
+
+        if not seg[0]["segmentation"]:
+            print(f"No valid exterior rings to draw at score >= {st}. Skipping.")
+            continue
+
         fig, ax = plt.subplots()
         ax.imshow(image)
         coco.showAnns(seg)
         plt.axis("off")
-        height, width, channels = image.shape
 
+        height, width = image.shape[0], image.shape[1]
         fig.set_size_inches(width / 100.0, height / 100.0)
         plt.gca().xaxis.set_major_locator(plt.NullLocator())
         plt.gca().yaxis.set_major_locator(plt.NullLocator())
         plt.subplots_adjust(top=1, bottom=0, left=0, right=1, hspace=0, wspace=0)
         plt.margins(0, 0)
-        save_file = os.path.join(shp_path, str + f"union_segm_{st}.tif")
+
+        save_file = os.path.join(shp_path, base + f"union_segm_{st}.tif")
         plt.savefig(save_file)
         plt.close(fig)
-    return save_file
 
+        last_save_file = save_file
+
+    return last_save_file
 
 
 def detect_result_to_json(
@@ -182,6 +244,9 @@ def show_result(
         ori_img_path=ori_img_path,
         ref_json = ref_json
     )
+
+    if seg_path is None:
+        print("✓ Detection results saved (visualization skipped)")
 
     return seg_path
 
