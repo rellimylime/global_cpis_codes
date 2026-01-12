@@ -5,7 +5,7 @@ from tools.utils import stdout_off, stdout_on
 import os
 import shutil
 import time
-
+import traceback
 
 
 def detect_sentinel_batch(
@@ -26,11 +26,21 @@ def detect_sentinel_batch(
     print("done.")
 
     # build model.
-    print("2.build model.", end=' ')
-    stdout_off()
-    model = build_mmdet_model(model_cfg)
-    stdout_on()
-    print("done.")
+    print("2.build model.", end=' ', flush=True)
+    try:
+        stdout_off()
+        model = build_mmdet_model(model_cfg)
+    except Exception:
+        # ensure we can see the error
+        stdout_on()
+        print("\nModel build failed. Traceback:\n", flush=True)
+        traceback.print_exc()
+        raise
+    finally:
+        # ALWAYS restore stdout
+        stdout_on()
+
+    print("done.", flush=True)
 
     # Detect images
     print("3. Detect images.")

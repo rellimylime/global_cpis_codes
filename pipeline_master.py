@@ -24,20 +24,62 @@ RCLONE_REMOTE = 'gdrive'
 
 # Directory Isolation (Fix #2)
 RAW_DIR = 'imgs_batch'       # Where raw split tiles go
+RAW_CACHE_DIR = 'imgs_cache_raw' # Cache for raw tiles 
 SCALED_DIR = 'imgs_batch_u8' # Where combined/scaled u8 tiles go
+SCALED_CACHE_DIR = 'imgs_cache_u8' # Cache for scaled tiles
 
 BATCH_SIZE_EXPORT = 50   # Export 50 tiles at a time from GEE
-BATCH_SIZE_PROCESS = 10  # Process 10 tiles at a time locally
+BATCH_SIZE_PROCESS = 2  # Process 10 tiles at a time locally
 MAX_GDRIVE_TILES = 100   # Keep max 100 tiles in GDrive (~50GB safety margin)
 
 STATE_FILE = 'pipeline_state.json'
 # =======================================
 
 TILE_RE = re.compile(r"tile_(\d+)")
+SPLIT_RE = re.compile(r"tile_(\d+)-(\d+)-(\d+)\.tif$")
+NOSPLIT_RE = re.compile(r"tile_(\d+)\.tif$")
 
-def tile_id_from_name(name: str) -> int | None:
+def tile_present(drive_files: list[str], tid: int) -> bool:
+    """
+    True if ANY Drive file exists for this tile id (split or non-split).
+    Example matches:
+      tile_0316.tif
+      tile_0316-0-0.tif
+      tile_0316-1-0.tif
+    """
+    pat = re.compile(rf"tile_{tid:04d}(\D|$)")
+    return any(pat.search(name) for name in drive_files)
+
+
+def tile_id_from_name(name: str):
     m = TILE_RE.search(name)
     return int(m.group(1)) if m else None
+
+def list_drive_tifs() -> list[str]:
+    r = subprocess.run(
+        ["rclone", "lsf", f"{RCLONE_REMOTE}:{GDRIVE_FOLDER}", "--max-depth", "1"],
+        capture_output=True, text=True
+    )
+    if r.returncode != 0:
+        raise RuntimeError(f"rclone lsf failed:\n{r.stderr}")
+    return [line.strip() for line in r.stdout.splitlines() if line.strip().endswith(".tif")]
+
+def tile_complete(drive_files: list[str], tile_id: int) -> bool:
+    # Complete if a non-split file exists
+    for f in drive_files:
+        m2 = NOSPLIT_RE.search(f)
+        if m2 and int(m2.group(1)) == tile_id:
+            return True
+
+    # Otherwise, treat as complete if ANY split part exists.
+    # This avoids waiting forever when EE uses an unexpected number of splits.
+    for f in drive_files:
+        m = SPLIT_RE.search(f)
+        if m and int(m.group(1)) == tile_id:
+            return True
+
+    return False
+
 
 def setup_batch_dirs():
     """Clear and recreate batch directories to prevent ghost files (Fix #2)."""
@@ -48,13 +90,16 @@ def setup_batch_dirs():
     os.makedirs(RAW_DIR)
     os.makedirs(SCALED_DIR)
 
+
 def download_file(filename):
-    """Helper to download a single file using rclone."""
     subprocess.run([
         'rclone', 'copy',
         f'{RCLONE_REMOTE}:{GDRIVE_FOLDER}/{filename}',
-        RAW_DIR
-    ], check=True, capture_output=True)
+        RAW_DIR,
+        '--stats', '5s',
+        '--stats-one-line'
+    ], check=True)
+
 
 def scale_tile_to_u8(filename: str) -> str:
     """
@@ -80,11 +125,12 @@ def scale_tile_to_u8(filename: str) -> str:
         out_path,
     ]
 
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = subprocess.run(cmd, capture_output=True, text=True, cwd=os.path.dirname(os.path.abspath(__file__)))
     if r.returncode != 0:
         raise RuntimeError(f"gdal_translate failed: {r.stderr}")
 
     return out_name
+
 
 def initialize_state():
     """Initialize or load pipeline state."""
@@ -93,14 +139,24 @@ def initialize_state():
         with open(STATE_FILE, 'r') as f:
             state = json.load(f)
         # Ensure keys exist
-        for key in ['arid_tiles', 'exported_tiles', 'in_gdrive', 'processed_tiles', 'failed_tiles']:
-            if key not in state: state[key] = []
+        for key in [
+            'arid_tiles', 'exported_tiles',
+            'processed_tiles', 'failed_tiles',
+            'pending_export_tiles', 'pending_export_started_at'
+        ]:
+            if key not in state:
+                state[key] = [] if key != 'pending_export_started_at' else None
         return state
     
     print("First run - creating new state file...")
     return {
-        'arid_tiles': [], 'exported_tiles': [], 'in_gdrive': [],
-        'processed_tiles': [], 'failed_tiles': [], 'last_updated': None
+        'arid_tiles': [],
+        'exported_tiles': [],
+        'processed_tiles': [],      # tile IDs only
+        'failed_tiles': [],
+        'pending_export_tiles': [], # tile IDs queued this batch
+        'pending_export_started_at': None,
+        'last_updated': None
     }
 
 def save_state(state):
@@ -108,49 +164,80 @@ def save_state(state):
     with open(STATE_FILE, 'w') as f:
         json.dump(state, f, indent=2)
 
-def check_gdrive_contents():
-    """Check what tiles are currently in Google Drive."""
-    print("Checking Google Drive contents...")
-    result = subprocess.run(
-        ['rclone', 'lsf', f'{RCLONE_REMOTE}:{GDRIVE_FOLDER}'],
-        capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        print(f"Warning: Could not access Google Drive (rclone error)")
-        return []
-    
-    tile_ids = set()
-    for line in result.stdout.splitlines():
-        match = TILE_RE.search(line)
-        if match:
-            tile_ids.add(int(match.group(1)))
-    
-    print(f"  Found {len(tile_ids)} tiles in Google Drive")
-    return sorted(tile_ids)
+
+def ensure_cache_dirs():
+    os.makedirs(RAW_CACHE_DIR, exist_ok=True)
+    os.makedirs(SCALED_CACHE_DIR, exist_ok=True)
+
+
+def cache_raw_path(filename: str) -> str:
+    return os.path.join(RAW_CACHE_DIR, filename)
+
+
+def cache_scaled_path(out_name: str) -> str:
+    return os.path.join(SCALED_CACHE_DIR, out_name)
+
+
+def file_ok(path: str, min_bytes: int = 1024) -> bool:
+    # cheap “not empty / not obviously broken” check
+    return os.path.exists(path) and os.path.getsize(path) >= min_bytes
+
+def delete_drive_files(filenames: list[str]) -> None:
+    """
+    Delete exact file objects from Drive. This avoids tile_id ambiguity.
+    """
+    if not filenames:
+        return
+
+    for i, name in enumerate(filenames, 1):
+        print(f"  [{i}/{len(filenames)}] deleting {name}...", end=" ", flush=True)
+        r = subprocess.run(
+            ["rclone", "deletefile", f"{RCLONE_REMOTE}:{GDRIVE_FOLDER}/{name}"],
+            capture_output=True, text=True
+        )
+        if r.returncode == 0:
+            print("✓")
+        else:
+            print("✗")
+            if r.stderr:
+                print(r.stderr)
+
+    # optional, but keeps Drive clean
+    subprocess.run(["rclone", "cleanup", f"{RCLONE_REMOTE}:"], capture_output=True)
 
 def process_tiles_with_copy(tile_ids_to_process):
     """
-    Main processing logic.
-    - Groups files by Tile ID (Fix #1)
-    - Downloads and scales (Fix #3: with retry)
-    - Runs detection on isolated folder (Fix #2)
+    Main processing logic with caching.
+    - Keeps isolated batch dirs (RAW_DIR, SCALED_DIR) but avoids re-downloading/rescaling
+      by using persistent caches (RAW_CACHE_DIR, SCALED_CACHE_DIR).
     """
+
+    processed_files = []   # drive filenames successfully scaled and included in detection
+    failed_files = []      # drive filenames that ultimately failed
+    batch_list_files = []  # scaled filenames (local) written to _batch_list.txt
+
+
     print(f"\nProcessing batch of {len(tile_ids_to_process)} tiles...")
-    
-    # 1. Clean workspace
+
+    ensure_cache_dirs()
+
+    # 1) Clean workspace (batch dirs only)
     setup_batch_dirs()
 
-    # 2. Map Tile IDs to Files in Drive
+    # 2) Map Tile IDs to Files in Drive
     print("Listing files in Drive to build file groups...")
     result = subprocess.run(
         ['rclone', 'lsf', f'{RCLONE_REMOTE}:{GDRIVE_FOLDER}'],
         capture_output=True, text=True
     )
-    
+    if result.returncode != 0:
+        raise RuntimeError(f"rclone lsf failed: {result.stderr}")
+
     files_by_tile = {}
     for line in result.stdout.splitlines():
         line = line.strip()
-        if not line.endswith(".tif"): continue
+        if not line.endswith(".tif"):
+            continue
         tid = tile_id_from_name(line)
         if tid is not None and tid in tile_ids_to_process:
             files_by_tile.setdefault(tid, []).append(line)
@@ -159,40 +246,108 @@ def process_tiles_with_copy(tile_ids_to_process):
         print("No matching files found in Drive for this batch.")
         return []
 
-    # 3. Download and Scale Loop
     processed_tile_ids = []
     failed_tile_ids = []
-    batch_list_files = [] # Only scaled files go here (Fix #6)
+    batch_list_files = []
 
-    print(f"Found files for {len(files_by_tile)} tiles. Starting download/scale...")
+    total_files = sum(len(v) for v in files_by_tile.values())
+    print(f"Found files for {len(files_by_tile)} tiles ({total_files} files). Starting download/scale...")
+
+    done_files = 0
 
     for tid, files in files_by_tile.items():
         tile_failed = False
         scaled_files_for_tile = []
 
-        for filename in files:
-            try:
-                # Attempt 1
-                try:
-                    download_file(filename)
-                    out_name = scale_tile_to_u8(filename)
-                    scaled_files_for_tile.append(out_name)
-                except Exception as e:
-                    # Fix #3: Corrupt file handling - Delete, Re-download, Retry
-                    print(f"⚠ Error on {filename}: {e}. Retrying once...")
-                    
-                    local_raw = os.path.join(RAW_DIR, filename)
-                    if os.path.exists(local_raw): os.remove(local_raw)
-                    
-                    download_file(filename) # Re-download
-                    out_name = scale_tile_to_u8(filename) # Re-scale
-                    scaled_files_for_tile.append(out_name)
+        # stable order helps debugging
+        files = sorted(files)
 
-            except Exception as final_e:
-                print(f"✗ Failed {filename} after retry: {final_e}")
-                tile_failed = True
-                break # Stop processing this tile completely
-        
+        for filename in files:
+            done_files += 1
+            print(f"  [{done_files}/{total_files}] tile {tid} file {filename}", flush=True)
+
+            try:
+                base, _ = os.path.splitext(filename)
+                out_name = base + "_rgbnir_u8.tif"
+
+                # ---- Step A: ensure raw in cache ----
+                raw_cache = cache_raw_path(filename)
+                if file_ok(raw_cache):
+                    # copy cached raw into batch RAW_DIR
+                    shutil.copy2(raw_cache, os.path.join(RAW_DIR, filename))
+                    print("    raw: cache hit", flush=True)
+                else:
+                    print("    raw: downloading", flush=True)
+                    download_file(filename)  # downloads into RAW_DIR
+
+                    # validate and save to cache
+                    raw_batch = os.path.join(RAW_DIR, filename)
+                    if not file_ok(raw_batch):
+                        raise RuntimeError("downloaded raw is missing/too small")
+                    shutil.copy2(raw_batch, raw_cache)
+
+                # ---- Step B: ensure scaled in cache ----
+                scaled_cache = cache_scaled_path(out_name)
+                scaled_batch = os.path.join(SCALED_DIR, out_name)
+
+                if file_ok(scaled_cache):
+                    shutil.copy2(scaled_cache, scaled_batch)
+                    print("    u8: cache hit", flush=True)
+                else:
+                    print("    u8: scaling", flush=True)
+                    out_name2 = scale_tile_to_u8(filename)  # reads RAW_DIR, writes SCALED_DIR
+                    if out_name2 != out_name:
+                        # safety, but should not happen with your scale fn
+                        out_name = out_name2
+                        scaled_batch = os.path.join(SCALED_DIR, out_name)
+
+                    if not file_ok(scaled_batch):
+                        raise RuntimeError("scaled output missing/too small")
+
+                    shutil.copy2(scaled_batch, scaled_cache)
+
+                scaled_files_for_tile.append(out_name)
+                processed_files.append(filename)
+
+            except Exception as e:
+                # retry once: wipe batch raw and caches for this file, then redo
+                print(f"    ⚠ error: {e}. Retrying once...", flush=True)
+                try:
+                    # wipe batch raw
+                    local_raw = os.path.join(RAW_DIR, filename)
+                    if os.path.exists(local_raw):
+                        os.remove(local_raw)
+
+                    # wipe cached raw and cached scaled (force fresh)
+                    raw_cache = cache_raw_path(filename)
+                    if os.path.exists(raw_cache):
+                        os.remove(raw_cache)
+
+                    base, _ = os.path.splitext(filename)
+                    out_name = base + "_rgbnir_u8.tif"
+                    scaled_cache = cache_scaled_path(out_name)
+                    if os.path.exists(scaled_cache):
+                        os.remove(scaled_cache)
+
+                    # redownload + rescale
+                    download_file(filename)
+                    out_name2 = scale_tile_to_u8(filename)
+                    if not file_ok(os.path.join(SCALED_DIR, out_name2)):
+                        raise RuntimeError("retry scaled output missing/too small")
+
+                    # save fresh into caches
+                    shutil.copy2(os.path.join(RAW_DIR, filename), cache_raw_path(filename))
+                    shutil.copy2(os.path.join(SCALED_DIR, out_name2), cache_scaled_path(out_name2))
+
+                    scaled_files_for_tile.append(out_name2)
+                    print("    ✓ retry success", flush=True)
+
+                except Exception as final_e:
+                    print(f"    ✗ failed after retry: {final_e}", flush=True)
+                    tile_failed = True
+                    failed_files.append(filename)
+                    break
+
         if tile_failed:
             failed_tile_ids.append(tid)
         else:
@@ -203,68 +358,35 @@ def process_tiles_with_copy(tile_ids_to_process):
         print("No files were successfully scaled.")
         return []
 
-    # 4. Write _batch_list.txt (Fix #6)
+    # 4) Write _batch_list.txt
     list_path = os.path.join(SCALED_DIR, "_batch_list.txt")
     with open(list_path, "w") as fp:
         for name in batch_list_files:
             fp.write(name + "\n")
 
-    # 5. Run Detection (Fix #5: Separate Process)
+    # 5) Run Detection (make cwd explicit so model/ paths resolve)
     print(f"\nRunning Detection on {len(batch_list_files)} files...")
-    # Passing the SCALED_DIR as the image directory
     cmd = ['python', 'batch_detect_africa.py', '--auto', '--img_dir', SCALED_DIR]
-    
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    
+    repo_root = os.path.dirname(os.path.abspath(__file__))
+
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=repo_root)
+
     print("--- Detection Output ---")
     print(result.stdout)
-    if result.stderr: print(f"Errors: {result.stderr}")
+    if result.stderr:
+        print(f"Errors: {result.stderr}")
     print("------------------------")
 
-    # Fix #4: If detection fails, STOP pipeline
     if result.returncode != 0:
         raise RuntimeError("Detection script crashed! Stopping pipeline to prevent Drive overflow.")
 
-    # 6. Cleanup (Delete from Drive)
-    # Only delete tiles that were successfully processed
-    if processed_tile_ids:
-        delete_from_gdrive(processed_tile_ids)
-    
-    # Local cleanup
-    setup_batch_dirs() # Wipes temp folders
+    # 6) Cleanup drive and batch dirs
+    # Delete only the exact Drive files we successfully processed
+    if processed_files:
+        delete_drive_files(processed_files)
 
+    setup_batch_dirs()
     return processed_tile_ids
-
-def delete_from_gdrive(tile_ids):
-    """Delete processed tiles from Google Drive."""
-    print(f"\nDeleting {len(tile_ids)} tiles from Google Drive...")
-    
-    # Get all files first to find matches
-    result = subprocess.run(
-        ['rclone', 'lsf', f'{RCLONE_REMOTE}:{GDRIVE_FOLDER}'],
-        capture_output=True, text=True
-    )
-    
-    files_to_delete = []
-    tile_set = set(tile_ids)
-    
-    for line in result.stdout.splitlines():
-        tid = tile_id_from_name(line)
-        if tid is not None and tid in tile_set:
-            files_to_delete.append(line.strip())
-
-    if not files_to_delete:
-        return
-
-    # Delete files one by one (safer than glob)
-    for i, f in enumerate(files_to_delete, 1):
-        if i % 10 == 0: print(f"  Deleting {i}/{len(files_to_delete)}...", end='\r')
-        subprocess.run(['rclone', 'delete', f'{RCLONE_REMOTE}:{GDRIVE_FOLDER}/{f}'], capture_output=True)
-    
-    subprocess.run(['rclone', 'cleanup', f'{RCLONE_REMOTE}:'], capture_output=True)
-    print(f"\n✓ Drive cleaned ({len(files_to_delete)} files)")
-
-# --- KEEPING ORIGINAL EXPORT/GEN FUNCTIONS ---
 
 def generate_arid_tiles():
     """Generate list of all arid tile IDs (same as original)."""
@@ -286,108 +408,211 @@ def generate_tile_bbox(tile_id):
     return [lon, lat, min(lon + GRID_SIZE, AFRICA_BBOX[2]), min(lat + GRID_SIZE, AFRICA_BBOX[3])]
 
 def export_tiles_from_gee(tile_ids):
-    """Export tiles from GEE to Google Drive."""
+    """Export tiles from GEE to Google Drive.
+
+    Returns:
+      successful: tiles where task.start() succeeded
+      skipped: tiles with no images available
+      failed: tiles with real errors (not queue-full)
+    """
     try:
         ee.Initialize()
     except Exception as e:
         print(f"ERROR: Earth Engine Init failed: {e}")
         return [], [], []
-    
+
     print(f"\nExporting {len(tile_ids)} tiles from GEE...")
     successful, skipped, failed = [], [], []
-    
+
+    # Optional but recommended: avoid queuing exports that already exist in Drive.
+    # This is fast and prevents duplicates when you re-run.
+    try:
+        drive_files = list_drive_tifs()  # uses rclone lsf --max-depth 1
+        print(f"\nDrive tif count: {len(drive_files)}")
+        print("Drive sample:", drive_files[:5])
+        in_drive = set()
+        for f in drive_files:
+            tid = tile_id_from_name(f)
+            if tid is not None:
+                in_drive.add(tid)
+    except Exception as e:
+        # If rclone is flaky, don't block exports, just proceed.
+        print(f"Warning: couldn't pre-check Drive contents ({e}). Proceeding anyway.")
+        in_drive = set()
+
     for i, tile_id in enumerate(tile_ids, 1):
-        print(f"  [{i}/{len(tile_ids)}] Tile {tile_id}...", end=' ', flush=True)
+        # Skip if already present in Drive (single or split)
+        if tile_id in in_drive:
+            print(f"  [{i}/{len(tile_ids)}] Tile {tile_id}... already in Drive, skip")
+            continue
+
+        print(f"  [{i}/{len(tile_ids)}] Tile {tile_id}...", end=" ", flush=True)
+
         try:
             bbox = generate_tile_bbox(tile_id)
             geometry = ee.Geometry.Rectangle(bbox)
-            collection = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+
+            collection = (ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED")
                           .filterBounds(geometry)
-                          .filterDate('2021-01-01', '2021-12-31')
-                          .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 30))
-                          .select(['B4', 'B3', 'B2', 'B8']))
-            
+                          .filterDate("2021-01-01", "2021-12-31")
+                          .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 30))
+                          .select(["B4", "B3", "B2", "B8"]))
+
             if collection.size().getInfo() == 0:
                 print("⚠ No images")
                 skipped.append(tile_id)
                 continue
-            
+
             composite = collection.median().clip(geometry)
             desc = f"africa_s2_2021_tile_{tile_id:04d}"
-            
-            ee.batch.Export.image.toDrive(
-                image=composite, description=desc, folder=GDRIVE_FOLDER,
-                fileNamePrefix=desc, region=geometry, scale=10,
-                crs='EPSG:4326', fileFormat='GeoTIFF', maxPixels=1e13
-            ).start()
+
+            task = ee.batch.Export.image.toDrive(
+                image=composite,
+                description=desc,
+                folder=GDRIVE_FOLDER,
+                fileNamePrefix=desc,
+                region=geometry,
+                scale=10,
+                crs="EPSG:4326",
+                fileFormat="GeoTIFF",
+                maxPixels=1e13,
+            )
+
+            task.start()
             print("✓")
             successful.append(tile_id)
+
         except Exception as e:
-            print(f"✗ {e}")
+            msg = str(e)
+
+            # KEY FIX: if queue is full, stop immediately and DO NOT mark as failed
+            if "Too many tasks already in the queue" in msg:
+                print(f"✗ {msg}")
+                print("Earth Engine queue is full. Stopping this export batch early.")
+                break
+
+            # Other errors are real failures
+            print(f"✗ {msg}")
             failed.append(tile_id)
-            
+
     return successful, skipped, failed
+
 
 def main():
     print("="*80)
-    print("Africa CPI Detection - Master Pipeline (Refactored)")
+    print("Africa CPI Detection - Master Pipeline (Strict)")
     print("="*80)
-    
+
     state = initialize_state()
-    
-    # 1. Arid Tiles
+
+    # 1) Load arid tiles list
     if not state['arid_tiles']:
         state['arid_tiles'] = generate_arid_tiles()
         save_state(state)
-        if not state['arid_tiles']: return
-    
-    # 2. Sync Drive
-    state['in_gdrive'] = check_gdrive_contents()
-    save_state(state)
-    
-    # 3. Logic
-    arid_set = set(state['arid_tiles'])
-    processed_set = set(state['processed_tiles'])
-    in_gdrive_set = set(state['in_gdrive'])
-    
-    ready_to_process = list(in_gdrive_set - processed_set)
-    need_export = list(arid_set - processed_set - in_gdrive_set)
-    
-    print(f"\nStatus:")
-    print(f"  Ready to process: {len(ready_to_process)}")
-    print(f"  Need export:      {len(need_export)}")
-    
-    # 4. Process Phase
-    if ready_to_process:
-        batch = sorted(ready_to_process)[:BATCH_SIZE_PROCESS]
-        try:
-            # Pass the list of IDs directly
-            processed = process_tiles_with_copy(batch)
-            if processed:
-                state['processed_tiles'].extend(processed)
-                state['processed_tiles'] = list(set(state['processed_tiles']))
-                save_state(state)
-                print(f"\n✓ Batch finished: {len(processed)} tiles processed.")
-        except RuntimeError as e:
-            print(f"\nCRITICAL ERROR: {e}")
-            print("Pipeline stopped to prevent errors from compounding.")
-            exit(1) # Hard stop
+        if not state['arid_tiles']:
+            return
 
-    # 5. Export Phase (Only if detection didn't fail)
-    # Re-check drive contents after processing/deleting
-    current_drive_count = len(check_gdrive_contents())
-    
-    if need_export and current_drive_count < MAX_GDRIVE_TILES:
-        space = MAX_GDRIVE_TILES - current_drive_count
-        to_export = min(BATCH_SIZE_EXPORT, space)
-        if to_export > 0:
-            batch_export = sorted(need_export)[:to_export]
-            success, skipped, failed = export_tiles_from_gee(batch_export)
-            state['exported_tiles'].extend(success)
-            state['failed_tiles'].extend(skipped + failed)
-            save_state(state)
-    elif len(need_export) > 0:
-        print("\nDrive full or no export needed. Waiting for processing.")
+    arid_set = set(int(x) for x in state['arid_tiles'])
+    processed_set = set(int(x) for x in state['processed_tiles'])
+    failed_set = set(int(x) for x in state['failed_tiles'])
+
+    # Always read Drive file listing once per run
+    drive_files = list_drive_tifs()
+
+        # 0) Always process anything already complete in Drive first
+    drive_tile_ids = sorted({tile_id_from_name(f) for f in drive_files if tile_id_from_name(f) is not None})
+
+    ready_now = []
+    for tid in drive_tile_ids:
+        if tid in processed_set or tid in failed_set:
+            continue
+        if tile_complete(drive_files, tid):
+            ready_now.append(tid)
+
+    if ready_now:
+        batch = ready_now[:BATCH_SIZE_PROCESS]
+        print(f"\nFound {len(ready_now)} complete tiles in Drive. Processing {len(batch)} now...")
+        processed_tile_ids = process_tiles_with_copy(batch)
+
+        state['processed_tiles'] = sorted(set(state['processed_tiles']) | set(processed_tile_ids))
+        save_state(state)
+        return
+
+    pending = state.get("pending_export_tiles", []) or []
+    pending = [int(x) for x in pending]
+
+    # 2) If a batch was queued earlier, do NOT export again
+    if pending:
+        arrived = []
+        not_arrived = []
+        complete = []
+        incomplete = []
+
+        for tid in pending:
+            if tile_present(drive_files, tid):
+                arrived.append(tid)
+                if tile_complete(drive_files, tid):
+                    complete.append(tid)
+                else:
+                    incomplete.append(tid)
+            else:
+                not_arrived.append(tid)
+
+        print(f"\nPending export tiles: {len(pending)}")
+        print(f"Arrived in Drive:     {len(arrived)}")
+        print(f"Still exporting:      {len(not_arrived)}")
+        print(f"Complete to process:  {len(complete)}")
+        print(f"Incomplete in Drive:  {len(incomplete)}")
+
+        # Wait until everything is BOTH arrived and complete
+        if not_arrived or incomplete:
+            return
+
+        print("\nAll pending tiles are complete in Drive. Processing...")
+        processed_tile_ids = process_tiles_with_copy(complete)
+
+        state['processed_tiles'] = sorted(set(state['processed_tiles']) | set(processed_tile_ids))
+        state['pending_export_tiles'] = []
+        state['pending_export_started_at'] = None
+        save_state(state)
+        print(f"\n✓ Processed {len(processed_tile_ids)} tiles.")
+        return
+
+
+    # 3) No pending batch -> decide next export batch
+    remaining = sorted(list(arid_set - processed_set - failed_set))
+    if not remaining:
+        print("\n✓ Nothing left to export/process.")
+        return
+
+    # Avoid exporting tiles already complete in Drive
+    already_ready = set()
+    for tid in remaining[:500]:  # cap for speed
+        if tile_complete(drive_files, tid):
+            already_ready.add(tid)
+
+    remaining = [tid for tid in remaining if tid not in already_ready]
+
+    if not remaining:
+        print("\nSome tiles are already in Drive. Run again to process them.")
+        return
+
+    batch_export = remaining[:BATCH_SIZE_EXPORT]
+    print(f"\nQueueing export batch of {len(batch_export)} tiles...")
+
+    success, skipped, failed = export_tiles_from_gee(batch_export)
+
+    # Record failures as tile IDs
+    state['failed_tiles'] = sorted(set(state['failed_tiles']) | set(skipped) | set(failed))
+
+    # IMPORTANT: pending batch is ONLY what successfully started
+    state['pending_export_tiles'] = success[:]
+    state['pending_export_started_at'] = datetime.now().isoformat()
+
+    save_state(state)
+
+    print("\nExport batch queued. Exiting now.")
+    print("Next run will wait until these tiles are in Drive, then process them.")
 
 if __name__ == '__main__':
     main()

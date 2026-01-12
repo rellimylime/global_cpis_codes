@@ -26,7 +26,7 @@ echo "Starting job at: $(date)"
 # Option B: If you use Conda (most likely)
 module load anaconda
 source activate base
-conda activate cpi_detection2
+conda activate cpi_fix
 
 # Debug: Print python version to make sure it loaded
 python --version
@@ -58,8 +58,8 @@ while true; do
     # But for now, we rely on the script to just output "Waiting..." 
     # if it runs out of work.
     
-    echo "Batch finished. Resting for 10 seconds..."
-    sleep 10
+    echo "Batch finished. Resting for 10 minutes..."
+    sleep 600
 done
 
 echo "Job finished at $(date)"

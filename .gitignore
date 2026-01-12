@@ -44,3 +44,12 @@ environment.yml
 
 # Pipeline state
 pipeline_state.json
+
+# Images cache/raw
+imgs_cache_u8/*
+imgs_cache_raw/*
+!imgs_cache_u8/.gitignore
+!imgs_cache_raw/.gitignore
+
+# Manual test
+manual_test/*
