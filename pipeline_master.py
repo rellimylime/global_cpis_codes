@@ -26,6 +26,18 @@ PROJECT_NAME = 'africa-irrigation-mine'
 STATE_FILE = 'pipeline_state.json'
 # =======================================
 
+
+def resolve_arid_shapefile():
+    """Find the arid-region shapefile directory across branch variants."""
+    candidates = [
+        'Africa_Arid_Regions_All-shp',
+        'SSA_All_Arid_by_Country-shp',
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return None
+
 def scale_tile_to_u8(in_path: str) -> str:
     """
     Convert 4-band GeoTIFF to Byte and apply fixed scale 0..12520 -> 0..255.
@@ -111,10 +123,10 @@ def generate_arid_tiles():
     from shapely.geometry import box
     
     # Load shapefile
-    shapefile_path = 'SSA_All_Arid_by_Country-shp'
-    if not os.path.exists(shapefile_path):
-        print(f"ERROR: Shapefile not found: {shapefile_path}")
-        print("Please ensure shapefile is in the current directory")
+    shapefile_path = resolve_arid_shapefile()
+    if shapefile_path is None:
+        print("ERROR: Arid shapefile directory not found.")
+        print("Expected one of: Africa_Arid_Regions_All-shp, SSA_All_Arid_by_Country-shp")
         return []
     
     print("Loading shapefile...")
@@ -124,7 +136,7 @@ def generate_arid_tiles():
         arid_gdf = arid_gdf.to_crs('EPSG:4326')
     
     print("Creating union of arid regions...")
-    arid_union = arid_gdf.union_all()
+    arid_union = arid_gdf.union_all() if hasattr(arid_gdf, "union_all") else arid_gdf.unary_union
     
     # Generate all tiles
     AFRICA_BBOX = [-17.6, -35.0, 51.4, 37.3]

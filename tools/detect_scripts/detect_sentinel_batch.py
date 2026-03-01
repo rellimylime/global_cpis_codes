@@ -5,6 +5,7 @@ from tools.utils import stdout_off, stdout_on
 import os
 import shutil
 import time
+import traceback
 
 
 
@@ -26,49 +27,56 @@ def detect_sentinel_batch(
     print("done.")
 
     # build model.
-    print("2.build model.", end=' ')
-    stdout_off()
-    model = build_mmdet_model(model_cfg)
-    stdout_on()
-    print("done.")
+    print("2.build model.", end=' ', flush=True)
+    try:
+        stdout_off()
+        model = build_mmdet_model(model_cfg)
+    except Exception:
+        stdout_on()
+        print("\nModel build failed. Traceback:\n", flush=True)
+        traceback.print_exc()
+        raise
+    finally:
+        # Always restore stdout even if build fails.
+        stdout_on()
+    print("done.", flush=True)
 
     # Detect images
     print("3. Detect images.")
     seg_paths = []
     fail_img = []
     for img_file in img_list:
-
         st = time.time()
-        # try:
-        seg_path = detect_sentinel(
-            img_path=img_file,
-            ref_json=ref_dataset_json,
-            work_dir=workdir,
-            nms_thr=nms_thr,
-            nms_merge_cats=nms_merge_cats,
-            score_thr=score_thr,
-            model=model,
-            model_cfg=model_cfg,
-        )
-        if seg_path is not None:
-            seg_paths.append((img_file, seg_path))
+        try:
+            seg_path = detect_sentinel(
+                img_path=img_file,
+                ref_json=ref_dataset_json,
+                work_dir=workdir,
+                nms_thr=nms_thr,
+                nms_merge_cats=nms_merge_cats,
+                score_thr=score_thr,
+                model=model,
+                model_cfg=model_cfg,
+            )
+            if seg_path is not None:
+                seg_paths.append((img_file, seg_path))
+        except Exception as e:
+            fail_img.append(f"{img_file}\t{repr(e)}\n")
+            print(f"FAILED {os.path.basename(img_file)}: {e}")
 
         print(f"Processing time: {time.strftime('%H:%M:%S', time.gmtime(time.time()-st))}")
 
     # Merge all image result.
     print("4.Merge all image result.", end=' ')
     os.makedirs(seg_res_path, mode=0o777, exist_ok=True)
-    for img_file, from_seg_dir in seg_paths:
+    for img_file, seg_file in seg_paths:
         img_name = os.path.splitext(os.path.basename(img_file))[0]
-        to_seg_dir = os.path.join(seg_res_path, img_name)
-        from_seg_dir = os.path.dirname(from_seg_dir)
-        if os.path.exists(to_seg_dir):
-            shutil.rmtree(to_seg_dir,ignore_errors=True)
-        from_seg_dir = from_seg_dir.replace(' ', r'\ ')
-        to_seg_dir = to_seg_dir.replace(' ', r'\ ')
-        os.system(f"cp -r {from_seg_dir} {to_seg_dir}")
-        # shutil.copytree(from_shp_dir, to_shp_dir, copy_function=shutil.copyfile)
-    shutil.rmtree(workdir)
+        to_dir = os.path.join(seg_res_path, img_name)
+        from_dir = os.path.dirname(seg_file)
+        if os.path.exists(to_dir):
+            shutil.rmtree(to_dir, ignore_errors=True)
+        shutil.copytree(from_dir, to_dir)
+    shutil.rmtree(workdir, ignore_errors=True)
     print('done.')
 
     print("5.save failed image list.", end=' ')
@@ -76,8 +84,3 @@ def detect_sentinel_batch(
     with open(fail_list_file, "w") as f:
         f.writelines(fail_img)
     print("done.")
-
-
-
-
-    pass
