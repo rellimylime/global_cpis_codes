@@ -34,3 +34,21 @@ hpc_config.pyc
 
 # GEE demo download script
 download_sentinel2_gee.py
+
+# New Landsat-first pipeline runtime artifacts
+data/**
+!data/.gitkeep
+runs/**
+!runs/.gitkeep
+outputs/**
+!outputs/final/
+!outputs/final/.gitkeep
+models/*.joblib
+models/*.meta.json
+models/*calibration_report*.json
+models/*feature_schema*.json
+assets/regions/arid_ssa.geojson
+assets/regions/arid_ssa_summary.json
+
+# Local archive staging from cleanup passes
+archive/**
