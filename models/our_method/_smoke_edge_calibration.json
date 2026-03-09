@@ -1,0 +1,30 @@
+{
+  "generated_at": "2026-03-07T00:17:07.094806+00:00",
+  "model_type": "sklearn_hgbt",
+  "train_rows": 12,
+  "val_rows": 23,
+  "average_precision": 0.043478260869565216,
+  "class_balance": {
+    "train_pos_before_downsample": 3,
+    "train_neg_before_downsample": 87,
+    "train_pos_after_downsample": 3,
+    "train_neg_after_downsample": 9,
+    "val_pos": 1,
+    "val_neg": 22
+  },
+  "downsample": {
+    "enabled": true,
+    "applied": true,
+    "ratio": 3.0,
+    "pos": 3,
+    "neg_before": 87,
+    "neg_after": 9,
+    "min_negatives": 0
+  },
+  "sample_weight_column": "sample_weight",
+  "threshold_policies": {
+    "precision_first": 0.5,
+    "balanced": 0.18181818181818185,
+    "recall_first": 0.18181818181818185
+  }
+}

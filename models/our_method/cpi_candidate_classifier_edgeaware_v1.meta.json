@@ -1,0 +1,7 @@
+{
+  "generated_at": "2026-03-06T23:43:41.026335+00:00",
+  "model_path": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\models\\our_method\\cpi_candidate_classifier_edgeaware_v1.joblib",
+  "model_type": "sklearn_hgbt",
+  "feature_schema_path": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\models\\our_method\\feature_schema_edgeaware_v1.json",
+  "report_path": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\models\\our_method\\calibration_report_edgeaware_v1.json"
+}

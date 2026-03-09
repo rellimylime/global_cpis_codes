@@ -1,0 +1,7 @@
+{
+  "generated_at": "2026-03-07T00:17:07.095807+00:00",
+  "model_path": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\models\\our_method\\_smoke_edge_model.joblib",
+  "model_type": "sklearn_hgbt",
+  "feature_schema_path": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\models\\our_method\\_smoke_edge_feature_schema.json",
+  "report_path": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\models\\our_method\\_smoke_edge_calibration.json"
+}

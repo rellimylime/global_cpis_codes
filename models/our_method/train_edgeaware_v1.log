@@ -1,0 +1,7 @@
+[2026-03-06T23:43:35.423107+00:00] Loading table: data\training\cpi_train_2015_round1_to_round4_edgeaware.csv
+[2026-03-06T23:43:35.436814+00:00] Using 7 feature columns: ['geom_score', 'ndvi_amp', 'ring_contrast', 'texture_score', 'radius_m', 'radius_px', 'pixel_size_m']
+[2026-03-06T23:43:36.982049+00:00] Training model: sklearn_hgbt
+[2026-03-06T23:43:41.029333+00:00] Model saved: C:\Users\ermil\Documents\global_cpis_codes\models\our_method\cpi_candidate_classifier_edgeaware_v1.joblib
+[2026-03-06T23:43:41.030333+00:00] Feature schema: models\our_method\feature_schema_edgeaware_v1.json
+[2026-03-06T23:43:41.031528+00:00] Calibration report: models\our_method\calibration_report_edgeaware_v1.json
+[2026-03-06T23:43:41.033541+00:00] Model meta: models\our_method\cpi_candidate_classifier_edgeaware_v1.meta.json

@@ -1,0 +1,7 @@
+{
+  "generated_at": "2026-03-07T01:14:30.107658+00:00",
+  "model_path": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\models\\our_method\\cpi_candidate_classifier_edgeaware_v3_anchor600_override.json",
+  "model_type": "xgboost",
+  "feature_schema_path": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\models\\our_method\\feature_schema_edgeaware_v3_anchor600_override.json",
+  "report_path": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\models\\our_method\\calibration_report_edgeaware_v3_anchor600_override.json"
+}
