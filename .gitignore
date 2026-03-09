@@ -16,6 +16,7 @@ test/
 # Downloaded tiles
 imgs/*.tif
 !imgs/sample*.tif  # Keep sample images
+imgs_test/**
 
 # Progress tracking files (user-specific)
 gee_export_progress.json
