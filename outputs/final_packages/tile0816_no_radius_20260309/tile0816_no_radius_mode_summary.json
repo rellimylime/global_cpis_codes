@@ -1,0 +1,14 @@
+{
+  "generated_at": "2026-03-09T18:06:53.869288+00:00",
+  "mode": "no_radius_inference",
+  "base_confirmed_polygons": 38,
+  "manual_missed_points": 168,
+  "combined_centers_total": 206,
+  "outputs": {
+    "confirmed_polygons_only": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\runs\\paper_method\\recommended\\tile0816_fixed_t085\\final\\no_radius_mode\\tile0816_confirmed_polygons_only.shp",
+    "manual_missed_points_clean": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\runs\\paper_method\\recommended\\tile0816_fixed_t085\\final\\no_radius_mode\\tile0816_manual_missed_points_clean.shp",
+    "combined_centers_shp": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\runs\\paper_method\\recommended\\tile0816_fixed_t085\\final\\no_radius_mode\\tile0816_centers_combined_no_radius.shp",
+    "combined_centers_gpkg": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\runs\\paper_method\\recommended\\tile0816_fixed_t085\\final\\no_radius_mode\\tile0816_centers_combined_no_radius.gpkg"
+  },
+  "notes": "Manual missed pivots are kept as center points only (no radius/area inferred)."
+}

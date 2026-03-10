@@ -1,0 +1,20 @@
+{
+  "generated_at": "2026-03-09T17:30:12.078100+00:00",
+  "inputs": {
+    "consensus_true": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\runs\\paper_method\\recommended\\tile0816_fixed_t085\\validated\\tile0816_consensus_true.shp",
+    "extras_reviewed": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\runs\\paper_method\\recommended\\tile0816_fixed_t085\\validated\\tile0816_extras_to_review.shp"
+  },
+  "counts": {
+    "consensus_true": 34,
+    "extras_true": 4,
+    "extras_false": 0,
+    "extras_other": 0,
+    "final_total": 38
+  },
+  "outputs": {
+    "final_shp": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\runs\\paper_method\\recommended\\tile0816_fixed_t085\\final\\tile0816_refined_final.shp",
+    "final_gpkg": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\runs\\paper_method\\recommended\\tile0816_fixed_t085\\final\\tile0816_refined_final.gpkg",
+    "extras_true_shp": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\runs\\paper_method\\recommended\\tile0816_fixed_t085\\final\\tile0816_extras_true.shp",
+    "extras_false_shp": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\runs\\paper_method\\recommended\\tile0816_fixed_t085\\final\\tile0816_extras_false.shp"
+  }
+}
