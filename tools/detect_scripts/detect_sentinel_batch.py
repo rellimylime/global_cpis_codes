@@ -7,7 +7,6 @@ import shutil
 import time
 import traceback
 
-
 def detect_sentinel_batch(
         ori_img_dir,
         img_list_file,
@@ -66,8 +65,10 @@ def detect_sentinel_batch(
                 seg_paths.append((img_file, seg_path))
 
         except Exception as e:
+            traceback.print_exc()  # <-- THIS IS THE KEY LINE
             fail_img.append(f"{img_file}\t{repr(e)}\n")
             print(f"✗ FAILED {os.path.basename(img_file)}: {e}")
+
 
         print(f"Processing time: {time.strftime('%H:%M:%S', time.gmtime(time.time()-st))}")
 
