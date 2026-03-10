@@ -8,6 +8,8 @@ This repo was cleaned on 2026-03-09 to separate active work from historical arti
   - `WORKSPACE_INDEX.md`
 - Method summary:
   - `METHOD_OVERVIEW.md`
+- Server handoff/provenance:
+  - `SERVER_AI_HANDOFF.md`
 - Main code entrypoint:
   - `cpis.py`
 - Active detection deliverables (tile 0816, no-radius mode):
