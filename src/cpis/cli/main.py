@@ -12,6 +12,7 @@ from cpis.cli.pipeline import build_parser as build_pipeline_run_parser
 from cpis.model.train import build_parser as build_model_train_parser
 from cpis.postprocess.merge_year import build_parser as build_postprocess_merge_parser
 from cpis.qa.labeling import build_parser as build_qa_labeling_parser
+from cpis.qa.prepare_anchor_truth import build_parser as build_qa_prepare_anchor_truth_parser
 from cpis.qa.report_year import build_parser as build_qa_report_parser
 from cpis.region.build_arid_ssa import build_parser as build_region_build_parser
 
@@ -57,6 +58,7 @@ def _add_qa_group(subparsers) -> None:
     qa_sub = qa.add_subparsers(dest="qa_cmd")
     build_qa_report_parser(qa_sub)
     build_qa_labeling_parser(qa_sub)
+    build_qa_prepare_anchor_truth_parser(qa_sub)
 
 
 def _add_pipeline_group(subparsers) -> None:

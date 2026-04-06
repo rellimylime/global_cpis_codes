@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,9 @@ from cpis.common.lock_utils import manifest_lock
 from cpis.common.logging_utils import build_logger
 from cpis.common.manifest import load_manifest, save_manifest, tile_status_counts
 from cpis.common.time_utils import utc_now_iso
+
+
+TILE_ID_RE = re.compile(r"tile_(\d+)", re.IGNORECASE)
 
 
 def _collection_ids_for_year(year: int) -> list[str]:
@@ -61,10 +65,35 @@ def _manifest_template(year: int, region_path: str, tile_size_km: float, collect
         "region": region_path,
         "tile_size_km": float(tile_size_km),
         "source_collections": collections,
+        "feature_contract": "stats_v1",
         "created_at": utc_now_iso(),
         "updated_at": None,
         "tiles": {},
     }
+
+
+def _local_tile_key(name: str) -> str | None:
+    m = TILE_ID_RE.search(str(name))
+    if not m:
+        return None
+    return f"tile_{int(m.group(1)):06d}"
+
+
+def _scan_local_tiles(paths: list[str], log) -> dict[str, list[str]]:
+    hits: dict[str, list[str]] = {}
+    for raw_path in paths:
+        path = Path(raw_path)
+        if not path.exists():
+            log(f"[warn] skip_local_dir missing: {path}")
+            continue
+        for tif_path in sorted(path.rglob("*.tif")):
+            tile_id = _local_tile_key(tif_path.name)
+            if tile_id is None:
+                continue
+            hits.setdefault(tile_id, []).append(str(tif_path.resolve()))
+    if hits:
+        log(f"Local tile scan complete: matched_tiles={len(hits)} from_dirs={len(paths)}")
+    return hits
 
 
 def _tile_rows(region_geom: Polygon, tile_size_km: float, max_tiles: int) -> list[dict[str, Any]]:
@@ -134,7 +163,35 @@ def _build_landsat_collection(ee, collection_id: str, region_rect, year: int, cl
     return col.map(_mask_scale)
 
 
-def _build_feature_image(ee, collections: list[str], bbox: list[float], year: int, cloud_max: float):
+def _feature_band_names(feature_contract: str) -> list[str]:
+    contract = str(feature_contract).strip().lower()
+    if contract == "stats_v1":
+        return [
+            "blue_median",
+            "green_median",
+            "red_median",
+            "nir_median",
+            "swir1_median",
+            "swir2_median",
+            "ndvi_p10",
+            "ndvi_p50",
+            "ndvi_p90",
+            "ndvi_amp",
+            "ndwi_p50",
+        ]
+    if contract == "paper_rgbnir_v1":
+        return ["blue", "green", "red", "nir"]
+    raise RuntimeError(f"Unsupported feature_contract={feature_contract}")
+
+
+def _build_feature_image(
+    ee,
+    collections: list[str],
+    bbox: list[float],
+    year: int,
+    cloud_max: float,
+    feature_contract: str = "stats_v1",
+):
     region_rect = ee.Geometry.Rectangle(bbox, proj="EPSG:4326", geodesic=False)
     merged = None
     for cid in collections:
@@ -144,10 +201,16 @@ def _build_feature_image(ee, collections: list[str], bbox: list[float], year: in
     if merged is None:
         raise RuntimeError("No Landsat collections constructed.")
 
+    contract = str(feature_contract).strip().lower()
+    if contract == "paper_rgbnir_v1":
+        final = merged.select(["blue", "green", "red", "nir"]).median().rename(_feature_band_names(contract))
+        return final.clip(region_rect).toFloat(), region_rect
+
+    if contract != "stats_v1":
+        raise RuntimeError(f"Unsupported feature_contract={feature_contract}")
+
     median = merged.select(["blue", "green", "red", "nir", "swir1", "swir2"]).median()
-    median = median.rename(
-        ["blue_median", "green_median", "red_median", "nir_median", "swir1_median", "swir2_median"]
-    )
+    median = median.rename(_feature_band_names(contract)[:6])
 
     ndvi_col = merged.map(lambda img: img.normalizedDifference(["nir", "red"]).rename("ndvi"))
     ndwi_col = merged.map(lambda img: img.normalizedDifference(["green", "nir"]).rename("ndwi"))
@@ -221,7 +284,10 @@ def run_export_year(args: argparse.Namespace) -> int:
     collections = _collection_ids_for_year(year)
     region_path = Path(args.region)
     log = build_logger(args.log_file if args.log_file else "")
-    log(f"Starting export-year for {year}; collections={collections}")
+    log(
+        f"Starting export-year for {year}; collections={collections}; "
+        f"feature_contract={args.feature_contract}"
+    )
 
     region_gdf = _load_region(region_path)
     region_union = region_gdf.geometry.union_all() if hasattr(region_gdf.geometry, "union_all") else region_gdf.unary_union
@@ -236,6 +302,8 @@ def run_export_year(args: argparse.Namespace) -> int:
     manifest["source_collections"] = collections
     manifest["region"] = str(region_path.resolve())
     manifest["tile_size_km"] = float(args.tile_size_km)
+    manifest["feature_contract"] = str(args.feature_contract)
+    manifest["band_names"] = _feature_band_names(args.feature_contract)
     manifest.setdefault("tiles", {})
 
     if manifest["tiles"] and not args.rebuild_tiles:
@@ -248,6 +316,15 @@ def run_export_year(args: argparse.Namespace) -> int:
         manifest["tiles"] = {}
         for row in tiles:
             manifest["tiles"][row["tile_id"]] = row
+
+    if args.skip_local_dir:
+        local_hits = _scan_local_tiles(list(args.skip_local_dir), log=log)
+        for tile_id, row in manifest["tiles"].items():
+            matches = local_hits.get(tile_id, [])
+            row["local_exists"] = bool(matches)
+            row["local_files"] = matches[:8]
+    else:
+        local_hits = {}
 
     ee = None
     if args.start_tasks or args.refresh_status:
@@ -265,7 +342,12 @@ def run_export_year(args: argparse.Namespace) -> int:
         if args.start_tasks:
             started = 0
             for tile_id, row in manifest["tiles"].items():
+                if int(args.max_start_tasks) > 0 and started >= int(args.max_start_tasks):
+                    log(f"Reached max_start_tasks={int(args.max_start_tasks)}; stopping task submission")
+                    break
                 status = row.get("status", EXPORT_STATUS_QUEUED)
+                if bool(row.get("local_exists", False)):
+                    continue
                 retries = int(row.get("retries", 0))
                 should_skip = args.resume and status == EXPORT_STATUS_SUCCEEDED
                 if should_skip:
@@ -287,6 +369,7 @@ def run_export_year(args: argparse.Namespace) -> int:
                     bbox=bbox,
                     year=year,
                     cloud_max=float(args.cloud_max),
+                    feature_contract=str(args.feature_contract),
                 )
                 task, desc = _start_export_task(
                     ee=ee,
@@ -323,13 +406,26 @@ def build_parser(subparsers) -> None:
     p.add_argument("--region", default=str(DEFAULT_REGION_GEOJSON), help="Region GeoJSON path")
     p.add_argument("--tile-size-km", type=float, default=200.0, help="Approx tile size in km")
     p.add_argument("--cloud-max", type=float, default=40.0, help="Max CLOUD_COVER per scene")
+    p.add_argument(
+        "--feature-contract",
+        choices=["stats_v1", "paper_rgbnir_v1"],
+        default="stats_v1",
+        help="Band contract for exported composites",
+    )
     p.add_argument("--drive-folder", default="CPIS_LANDSAT_EXPORTS", help="GDrive folder for exports")
     p.add_argument("--project", default="africa-irrigation-mine", help="GEE project id")
     p.add_argument("--run-dir", default="", help="Run directory (default: runs/export/{year})")
     p.add_argument("--manifest", default="", help="Export manifest path")
+    p.add_argument(
+        "--skip-local-dir",
+        action="append",
+        default=[],
+        help="Local directory to scan for existing tile TIFFs; matched tiles will not be started again",
+    )
     p.add_argument("--resume", action="store_true", help="Skip tiles already succeeded")
     p.add_argument("--rebuild-tiles", action="store_true", help="Rebuild tile list in manifest from region grid")
     p.add_argument("--start-tasks", action="store_true", help="Actually queue GEE tasks")
+    p.add_argument("--max-start-tasks", type=int, default=0, help="Limit tasks started in this invocation; 0 means no cap")
     p.add_argument("--refresh-status", action="store_true", help="Refresh statuses from GEE task API")
     p.add_argument("--max-retries", type=int, default=3, help="Max retries for failed tiles")
     p.add_argument("--max-tiles", type=int, default=0, help="Limit number of generated tiles (smoke runs)")

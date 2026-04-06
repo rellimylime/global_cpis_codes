@@ -254,6 +254,16 @@ def _write_candidates(df: pd.DataFrame, out_parquet: Path, out_csv: Path, log) -
     return fmt
 
 
+def _read_tile_list(path: Path) -> set[str]:
+    names: set[str] = set()
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        names.add(Path(line).stem)
+    return names
+
+
 def run_generate_candidates(args: argparse.Namespace) -> int:
     in_dir = Path(args.input_dir)
     if not in_dir.exists():
@@ -261,6 +271,16 @@ def run_generate_candidates(args: argparse.Namespace) -> int:
     tif_list = sorted([p for p in in_dir.rglob("*.tif") if p.is_file()])
     if not tif_list:
         raise RuntimeError(f"No .tif files found in {in_dir}")
+
+    tile_list_arg = str(getattr(args, "tile_list_file", "")).strip()
+    if tile_list_arg:
+        tile_list_path = Path(tile_list_arg)
+        if not tile_list_path.exists():
+            raise FileNotFoundError(f"Tile list file not found: {tile_list_path}")
+        requested_tiles = _read_tile_list(tile_list_path)
+        tif_list = [p for p in tif_list if p.stem in requested_tiles]
+        if not tif_list:
+            raise RuntimeError(f"No .tif files matched tile list: {tile_list_path}")
 
     if int(args.max_tiles) > 0:
         tif_list = tif_list[: int(args.max_tiles)]
@@ -423,6 +443,7 @@ def build_parser(subparsers) -> None:
     p.add_argument("--region-mask", default="", help="Optional GeoJSON region mask; drop candidates outside mask")
     p.add_argument("--exclude-water", action="store_true", help="Drop candidates with NDWI >= threshold")
     p.add_argument("--water-ndwi-threshold", type=float, default=0.0, help="Water exclusion threshold on NDWI center value")
+    p.add_argument("--tile-list-file", default="", help="Optional newline-delimited list of tile stems to process")
     p.add_argument("--max-tiles", type=int, default=0, help="Limit number of tiles for smoke runs")
     p.add_argument("--stale-lock-seconds", type=int, default=7200, help="Lock recovery timeout")
     p.add_argument("--force-lock", action="store_true", help="Force lock takeover")
