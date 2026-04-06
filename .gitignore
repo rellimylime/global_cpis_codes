@@ -22,6 +22,13 @@ imgs_test/**
 gee_export_progress.json
 africa_processing_progress.json
 africa_tiles_2021_*.json
+.claude
+.claude/
+.codex
+.codex/
+INFO
+cpis_*.log
+cpis_*.err
 
 # Final outputs (user-specific)
 africa_cpis_2021.*
@@ -41,6 +48,9 @@ data/**
 !data/.gitkeep
 runs/**
 !runs/.gitkeep
+!runs/new_method/
+!runs/new_method/rse2023_2015_v1/
+!runs/new_method/rse2023_2015_v1/README.md
 outputs/**
 !outputs/final/
 !outputs/final/.gitkeep
@@ -53,3 +63,14 @@ assets/regions/arid_ssa_summary.json
 
 # Local archive staging from cleanup passes
 archive/**
+
+# Local imagery caches and scratch exports
+imgs_cache_raw/**
+imgs_cache_u8/**
+
+# Local raw source datasets
+Africa_CPIS-shp/*.cpg
+Africa_CPIS-shp/*.dbf
+Africa_CPIS-shp/*.prj
+Africa_CPIS-shp/*.shp
+Africa_CPIS-shp/*.shx
