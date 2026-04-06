@@ -12,10 +12,34 @@ Design choice:
 
 - Runs:
   - `runs/new_method/centerpoint_v1/`
+  - `runs/new_method/rse2023_2015_v1/`
 - Docs:
   - `docs/new_method/`
 - Tools:
   - `tools/new_method/`
+
+## Additional Workflow
+
+- `CLAUDE_CODE_HANDOFF.md`
+  - Push-safe current-state snapshot for handing the repo to a fresh code
+    assistant without depending on local Slurm logs.
+- `docs/new_method/workflow.md`
+  - Detailed 2015 CPI workflow and decision log covering method selection,
+    engineering fixes, training/debugging history, and current rerun criteria.
+- `docs/new_method/workflow_file_inventory.md`
+  - Current file-level inventory of the active 2015 workflow inputs, scripts,
+    datasets, labels, checkpoints, and generated artifacts.
+- `docs/new_method/ignore_rules.md`
+  - Explains which artifacts are intentionally local-only plus which labels,
+    tiles, and detections are filtered out by the current workflow code.
+- `docs/new_method/labeling_plan.md`
+  - QGIS-oriented manual labeling plan for 2015 tiles, including why polygons
+    are required for the current instance-segmentation pipeline and how to
+    structure gold validation vs reviewed training labels.
+- `docs/new_method/rse2023_2015_v1.md`
+  - Paper-aligned 2015 CPI inventory workflow using the 2000/2021 anchor layers,
+    4-band Landsat exports, one-category COCO dataset prep, and final inventory
+    normalization.
 
 ## Bootstrap Command
 

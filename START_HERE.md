@@ -1,38 +1,44 @@
 # Start Here
 
-This repo was cleaned on 2026-03-09 to separate active work from historical artifacts.
+This repo was cleaned again on 2026-03-18 to keep the active workflow narrow
+and move historical artifacts into archive directories.
 
-## 1) Active Files You Should Use
+## 1) Use These First
 
 - Workspace map:
   - `WORKSPACE_INDEX.md`
-- Method summary:
-  - `METHOD_OVERVIEW.md`
-- Server handoff/provenance:
-  - `SERVER_AI_HANDOFF.md`
+- Current push-safe handoff:
+  - `CLAUDE_CODE_HANDOFF.md`
+- Current workflow docs:
+  - `docs/new_method/workflow.md`
+  - `docs/new_method/rse2023_2015_v1.md`
+  - `docs/new_method/workflow_file_inventory.md`
+  - `docs/new_method/labeling_plan.md`
+  - `docs/new_method/ignore_rules.md`
 - Main code entrypoint:
   - `cpis.py`
-- Active detection deliverables (tile 0816, no-radius mode):
-  - `runs/paper_method/recommended/tile0816_fixed_t085/final/no_radius_mode/`
-  - `outputs/final_packages/tile0816_no_radius_20260309/` (single packaged folder)
+- Current active workflow root:
+  - `runs/new_method/rse2023_2015_v1/`
+- Reference papers:
+  - `docs/references/chen_et_al/`
 
-## 2) Archive (Historical/Reference)
+## 2) Treat These As Historical Reference
 
-- Root:
+- Legacy paper-method summary:
+  - `METHOD_OVERVIEW.md`
+- Legacy tile-0816 handoff:
+  - `SERVER_AI_HANDOFF.md`
+- Repo archives:
   - `archive/2026-03-09_cleanup/`
-- Archive index:
-  - `archive/2026-03-09_cleanup/README.md`
-- Archive manifest:
-  - `archive/2026-03-09_cleanup/ARCHIVE_MANIFEST.json`
-  - `archive/2026-03-09_cleanup/ARCHIVE_MANIFEST.csv`
+  - `archive/2026-03-18_workspace_cleanup/`
+  - `archive/2026-03-18_whole_house_cleanup/`
 
-## 3) Rule of Thumb
+## 3) Rule Of Thumb
 
-- Use `runs/paper_method/recommended/.../no_radius_mode/` for current outputs.
-- Treat `archive/2026-03-09_cleanup/` as read-only historical storage.
-
-## 4) New Method Track
-
-- `docs/new_method/README.md`
-- `tools/new_method/bootstrap_centerpoint_v1.py`
-- `runs/new_method/centerpoint_v1/`
+- Use `docs/new_method/` plus `runs/new_method/rse2023_2015_v1/` for current work.
+- Use `CLAUDE_CODE_HANDOFF.md` when you need a repo-facing current-status
+  snapshot, because most runtime artifacts under `runs/` are intentionally not
+  the main handoff surface.
+- Treat `archive/` as read-only historical storage.
+- Treat `METHOD_OVERVIEW.md` and `SERVER_AI_HANDOFF.md` as legacy reference, not
+  as the main active workflow.

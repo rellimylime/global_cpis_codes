@@ -1,64 +1,49 @@
-# Method Overview (Current State)
+# Method Overview
 
-This file describes the currently active CPI workflow artifacts in this repo.
+This repo now has one clearly primary workflow and one legacy reference branch.
 
-## A) Paper-Method Calibration Track (Current Active)
+## Active Workflow
 
-Objective:
+Use these first:
 
-- Calibrate detections for a target tile and keep reviewed outputs easy to inspect.
+- `WORKSPACE_INDEX.md`
+- `docs/new_method/workflow.md`
+- `docs/new_method/rse2023_2015_v1.md`
+- `docs/new_method/workflow_file_inventory.md`
+- `docs/new_method/labeling_plan.md`
 
-Current tile package:
+Active run root:
+
+- `runs/new_method/rse2023_2015_v1/`
+
+Primary code entrypoints:
+
+- `cpis.py`
+- `src/cpis/`
+- `tools/new_method/`
+
+Reference papers:
+
+- `docs/references/chen_et_al/Chen-mapping-center-pivots.pdf`
+- `docs/references/chen_et_al/Chen-supplemental.pdf`
+
+## Legacy Reference Branch
+
+The older tile-0816 paper-method review branch is still useful as provenance
+and example material, but it is not the main active workflow anymore.
+
+Legacy branch roots:
 
 - `runs/paper_method/recommended/tile0816_fixed_t085/`
+- `outputs/final_packages/tile0816_no_radius_20260309/`
+- `SERVER_AI_HANDOFF.md`
 
-Main steps used:
+## Archive Policy
 
-1. Run segmentation-based detections across preprocessing/chip variants.
-2. Build consensus/union vector layers.
-3. Manual review in QGIS.
-4. Keep final output in no-radius mode:
-   - confirmed polygons from model
-   - manually-added missed pivots as points
+Historical outputs, logs, smoke runs, and cleanup results live under:
 
-Recommended final output path:
+- `archive/2026-03-09_cleanup/`
+- `archive/2026-03-18_workspace_cleanup/`
+- `archive/2026-03-18_whole_house_cleanup/`
 
-- `runs/paper_method/recommended/tile0816_fixed_t085/final/no_radius_mode/`
-
-## B) Why "No Radius Mode"
-
-- Radius inference for manual missed points was intentionally disabled.
-- Manual missed pivots are represented as center points only.
-- This avoids introducing geometric assumptions not directly supported by labels.
-
-## C) Code Entry Points
-
-- Main CLI:
-  - `cpis.py`
-- QA/build helpers:
-  - `tools/qa/`
-- Cleanup/inventory helpers:
-  - `tools/cleanup/finalize_locked_cleanup.ps1`
-  - `tools/cleanup/generate_archive_manifest.py`
-
-## D) Archive Policy
-
-- Historical outputs/logs are archived under:
-  - `archive/2026-03-09_cleanup/`
-- Archive is intended as read-only provenance storage.
-
-For details:
-
-- `archive/2026-03-09_cleanup/README.md`
-- `archive/2026-03-09_cleanup/ARCHIVE_MANIFEST.json`
-
-## E) New Method Bootstrap (centerpoint_v1)
-
-Fresh-start path:
-
-- `docs/new_method/README.md`
-- `tools/new_method/bootstrap_centerpoint_v1.py`
-- `runs/new_method/centerpoint_v1/`
-
-This method uses point supervision first, then optionally trains a classifier
-from transferred labels to candidate rows.
+Archives are intended as read-only provenance storage.
