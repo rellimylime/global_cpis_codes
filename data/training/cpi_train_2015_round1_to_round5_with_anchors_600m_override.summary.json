@@ -1,0 +1,27 @@
+{
+  "generated_at": "2026-03-07T01:14:01.083677+00:00",
+  "labeled_input": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\runs\\our_method\\labeling\\merged_rounds\\label_candidates_round1_to_round5_with_anchors_600m_override.geojson",
+  "out_table": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\data\\training\\cpi_train_2015_round1_to_round5_with_anchors_600m_override.csv",
+  "format": "csv",
+  "rows_out": 921,
+  "label_1": 33,
+  "label_0": 888,
+  "feature_columns": [
+    "geom_score",
+    "ndvi_amp",
+    "ring_contrast",
+    "texture_score",
+    "radius_m",
+    "radius_px",
+    "pixel_size_m"
+  ],
+  "edge_policy": "positive",
+  "edge_status_column": "review_status",
+  "edge_status_values": [
+    "edge"
+  ],
+  "edge_rows_out": 10,
+  "emit_sample_weight": true,
+  "sample_weight_column": "sample_weight",
+  "edge_weight": 0.5
+}

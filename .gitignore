@@ -16,6 +16,7 @@ test/
 # Downloaded tiles
 imgs/*.tif
 !imgs/sample*.tif  # Keep sample images
+imgs_test/**
 
 # Progress tracking files (user-specific)
 gee_export_progress.json
@@ -32,24 +33,23 @@ fail_img.txt
 # HPC-specific config (user customizes this)
 hpc_config.pyc
 
-# Batch image files
-imgs_batch/*
-imgs_batch_u8/*
+# GEE demo download script
+download_sentinel2_gee.py
 
-# Temporary output files
-*.out
+# New Landsat-first pipeline runtime artifacts
+data/**
+!data/.gitkeep
+runs/**
+!runs/.gitkeep
+outputs/**
+!outputs/final/
+!outputs/final/.gitkeep
+models/*.joblib
+models/*.meta.json
+models/*calibration_report*.json
+models/*feature_schema*.json
+assets/regions/arid_ssa.geojson
+assets/regions/arid_ssa_summary.json
 
-# Environment files
-environment.yml
-
-# Pipeline state
-pipeline_state.json
-
-# Images cache/raw
-imgs_cache_u8/*
-imgs_cache_raw/*
-!imgs_cache_u8/.gitignore
-!imgs_cache_raw/.gitignore
-
-# Manual test
-manual_test/*
+# Local archive staging from cleanup passes
+archive/**

@@ -5,10 +5,15 @@ from mmcv.runner import init_dist, load_checkpoint, wrap_fp16_model
 from mmdet.models import build_detector
 
 
-def build_mmdet_model(cfgs):
-    cfg_file = cfgs["cfg_file"]
-    ckpt_path = cfgs["checkpoint"]  # path to checkpoint file
-
+def build_mmdet_model(
+        cfgs
+):
+    cfg_file = cfgs['cfg_file']
+    checkpoint = cfgs['checkpoint']
+    infer_score_thr = cfgs.get('infer_score_thr', None)
+    infer_nms_iou = cfgs.get('infer_nms_iou', None)
+    infer_max_per_img = cfgs.get('infer_max_per_img', None)
+    infer_mask_thr_binary = cfgs.get('infer_mask_thr_binary', None)
     fuse_conv_bn = False
     launcher = "none"
 
@@ -39,6 +44,17 @@ def build_mmdet_model(cfgs):
     elif isinstance(cfg.data.test, list):
         for ds_cfg in cfg.data.test:
             ds_cfg.test_mode = True
+
+    # Optional runtime overrides to trade precision/recall without editing model file.
+    if hasattr(cfg, 'test_cfg') and hasattr(cfg.test_cfg, 'rcnn'):
+        if infer_score_thr is not None:
+            cfg.test_cfg.rcnn.score_thr = float(infer_score_thr)
+        if infer_nms_iou is not None and hasattr(cfg.test_cfg.rcnn, 'nms'):
+            cfg.test_cfg.rcnn.nms.iou_threshold = float(infer_nms_iou)
+        if infer_max_per_img is not None:
+            cfg.test_cfg.rcnn.max_per_img = int(infer_max_per_img)
+        if infer_mask_thr_binary is not None:
+            cfg.test_cfg.rcnn.mask_thr_binary = float(infer_mask_thr_binary)
 
     # init distributed env first, since logger depends on the dist info.
     if launcher == "none":

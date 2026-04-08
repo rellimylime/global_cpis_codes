@@ -13,9 +13,58 @@ import copy
 from tools.utils import stdout_off, stdout_on
 import cv2
 from pycocotools.coco import COCO
-from skimage import io
-from matplotlib import pyplot as plt
 import math
+
+
+def _read_image_for_display(img_path):
+    """
+    Read GeoTIFF for visualization without skimage dependency.
+    Returns HxWxC numpy array suitable for matplotlib.
+    """
+    ds = gdal.Open(img_path)
+    if ds is None:
+        raise RuntimeError(f"Could not open image: {img_path}")
+
+    arr = ds.ReadAsArray()
+    if arr is None:
+        raise RuntimeError(f"Could not read image array: {img_path}")
+
+    # GDAL returns CxHxW for multiband, HxW for single band.
+    if arr.ndim == 2:
+        arr = np.stack([arr, arr, arr], axis=-1)
+    elif arr.ndim == 3:
+        arr = np.transpose(arr, (1, 2, 0))
+        if arr.shape[2] == 1:
+            arr = np.repeat(arr, 3, axis=2)
+        elif arr.shape[2] > 3:
+            arr = arr[:, :, :3]
+    else:
+        raise RuntimeError(f"Unexpected image shape {arr.shape} for {img_path}")
+
+    return arr
+
+
+def _save_mask_geotiff(mask, ref_img_path, out_path):
+    """Save a uint8 mask as georeferenced GeoTIFF using reference image metadata."""
+    src = gdal.Open(ref_img_path)
+    if src is None:
+        raise RuntimeError(f"Could not open reference image: {ref_img_path}")
+
+    height, width = mask.shape
+    driver = gdal.GetDriverByName('GTiff')
+    out_ds = driver.Create(out_path, width, height, 1, gdal.GDT_Byte)
+    if out_ds is None:
+        raise RuntimeError(f"Could not create output GeoTIFF: {out_path}")
+
+    out_ds.SetGeoTransform(src.GetGeoTransform())
+    out_ds.SetProjection(src.GetProjection())
+    out_band = out_ds.GetRasterBand(1)
+    out_band.WriteArray(mask)
+    out_band.SetNoDataValue(0)
+
+    out_ds.FlushCache()
+    out_ds = None
+    src = None
 
 def union_segm(
         js_data,
@@ -32,15 +81,11 @@ def union_segm(
         return None
 
     def __as_polygon(segm):
-        # segm is list-of-lists, each inner list is flattened [x1,y1,x2,y2,...]
         segms = [
-            shapely.geometry.Polygon(
-                np.array(s, dtype=float).reshape(-1, 2).tolist()
-            )
+            shapely.geometry.Polygon(np.array(s, dtype=float).reshape(-1, 2).tolist())
             for s in segm
             if s is not None and len(s) >= 6
         ]
-        # filter invalid/empty polys
         segms = [p for p in segms if p.is_valid and (not p.is_empty)]
         if not segms:
             return None
@@ -52,7 +97,7 @@ def union_segm(
     shp_path = os.path.join(save_path, "seg")
     os.makedirs(shp_path, mode=0o777, exist_ok=True)
 
-    # 1) build polygons + scores, skipping empty segmentations
+    # 1) Build polygons + scores, skipping empty segmentations.
     polys = []
     scores = []
     for j in js_data:
@@ -71,12 +116,11 @@ def union_segm(
 
     score = np.array(scores, dtype=float)
 
-    # 2) for each threshold, union and draw
+    # 2) For each threshold, union and draw.
     last_save_file = None
     for st in score_thr:
         idxs = score >= st
         keep = [p for keep_flag, p in zip(idxs, polys) if keep_flag]
-
         if not keep:
             print(f"No detections at score >= {st}. Skipping this threshold.")
             continue
@@ -86,17 +130,15 @@ def union_segm(
             print(f"Union is empty at score >= {st}. Skipping this threshold.")
             continue
 
-        # Normalize unioned geometry into a list of Polygon objects
         poly_list = []
         if unioned.geom_type == "Polygon":
             poly_list = [unioned]
         elif unioned.geom_type == "MultiPolygon":
             poly_list = list(unioned.geoms)
         elif unioned.geom_type == "GeometryCollection":
-            poly_list = [g for g in unioned.geoms if g.geom_type in ("Polygon", "MultiPolygon")]
-            # flatten any MultiPolygons inside the collection
+            candidates = [g for g in unioned.geoms if g.geom_type in ("Polygon", "MultiPolygon")]
             flat = []
-            for g in poly_list:
+            for g in candidates:
                 if g.geom_type == "Polygon":
                     flat.append(g)
                 else:
@@ -110,46 +152,32 @@ def union_segm(
             print(f"No drawable polygons at score >= {st}. Skipping.")
             continue
 
-        coco = COCO(ref_json)
         base = os.path.splitext(os.path.split(ori_img_path)[1])[0]
-        image = io.imread(ori_img_path)
+        image = _read_image_for_display(ori_img_path)
+        height, width = image.shape[0], image.shape[1]
+        mask = np.zeros((height, width), dtype=np.uint8)
+        valid_poly_count = 0
 
-        seg = [{"segmentation": []}]
-
-        # Each polygon exterior coords -> COCO expects [x1,y1,x2,y2,...]
         for p in poly_list:
             coords = list(p.exterior.coords)
             if len(coords) < 3:
                 continue
-            flat = []
-            for x, y in coords:
-                flat.append(float(x))
-                flat.append(float(y))
-            # COCO segmentation needs at least 3 points => 6 numbers
-            if len(flat) >= 6:
-                seg[0]["segmentation"].append(flat)
+            pts = np.array([[int(round(x)), int(round(y))] for x, y in coords], dtype=np.int32)
+            if pts.shape[0] < 3:
+                continue
+            pts = pts.reshape((-1, 1, 2))
+            cv2.fillPoly(mask, [pts], 255)
+            valid_poly_count += 1
 
-        if not seg[0]["segmentation"]:
-            print(f"No valid exterior rings to draw at score >= {st}. Skipping.")
+        if valid_poly_count == 0:
+            print(f"No valid exterior rings to rasterize at score >= {st}. Skipping.")
             continue
 
-        fig, ax = plt.subplots()
-        ax.imshow(image)
-        coco.showAnns(seg)
-        plt.axis("off")
-
-        height, width = image.shape[0], image.shape[1]
-        fig.set_size_inches(width / 100.0, height / 100.0)
-        plt.gca().xaxis.set_major_locator(plt.NullLocator())
-        plt.gca().yaxis.set_major_locator(plt.NullLocator())
-        plt.subplots_adjust(top=1, bottom=0, left=0, right=1, hspace=0, wspace=0)
-        plt.margins(0, 0)
-
         save_file = os.path.join(shp_path, base + f"union_segm_{st}.tif")
-        plt.savefig(save_file)
-        plt.close(fig)
-
+        _save_mask_geotiff(mask, ori_img_path, save_file)
         last_save_file = save_file
+
+    return last_save_file
 
     return last_save_file
 

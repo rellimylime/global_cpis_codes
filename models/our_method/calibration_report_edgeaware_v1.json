@@ -1,0 +1,12 @@
+{
+  "generated_at": "2026-03-06T23:43:41.024334+00:00",
+  "model_type": "sklearn_hgbt",
+  "train_rows": 657,
+  "val_rows": 165,
+  "average_precision": 0.028227996616982217,
+  "threshold_policies": {
+    "precision_first": 0.5,
+    "balanced": 9.078510256622733e-05,
+    "recall_first": 2.775017902752089e-08
+  }
+}

@@ -35,77 +35,22 @@ MAX_GDRIVE_TILES = 100   # Keep max 100 tiles in GDrive (~50GB safety margin)
 STATE_FILE = 'pipeline_state.json'
 # =======================================
 
-TILE_RE = re.compile(r"tile_(\d+)")
-SPLIT_RE = re.compile(r"tile_(\d+)-(\d+)-(\d+)\.tif$")
-NOSPLIT_RE = re.compile(r"tile_(\d+)\.tif$")
 
-def tile_present(drive_files: list[str], tid: int) -> bool:
+def resolve_arid_shapefile():
+    """Find the arid-region shapefile directory across branch variants."""
+    candidates = [
+        'Africa_Arid_Regions_All-shp',
+        'SSA_All_Arid_by_Country-shp',
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return None
+
+def scale_tile_to_u8(in_path: str) -> str:
     """
-    True if ANY Drive file exists for this tile id (split or non-split).
-    Example matches:
-      tile_0316.tif
-      tile_0316-0-0.tif
-      tile_0316-1-0.tif
-    """
-    pat = re.compile(rf"tile_{tid:04d}(\D|$)")
-    return any(pat.search(name) for name in drive_files)
-
-
-def tile_id_from_name(name: str):
-    m = TILE_RE.search(name)
-    return int(m.group(1)) if m else None
-
-def list_drive_tifs() -> list[str]:
-    r = subprocess.run(
-        ["rclone", "lsf", f"{RCLONE_REMOTE}:{GDRIVE_FOLDER}", "--max-depth", "1"],
-        capture_output=True, text=True
-    )
-    if r.returncode != 0:
-        raise RuntimeError(f"rclone lsf failed:\n{r.stderr}")
-    return [line.strip() for line in r.stdout.splitlines() if line.strip().endswith(".tif")]
-
-def tile_complete(drive_files: list[str], tile_id: int) -> bool:
-    # Complete if a non-split file exists
-    for f in drive_files:
-        m2 = NOSPLIT_RE.search(f)
-        if m2 and int(m2.group(1)) == tile_id:
-            return True
-
-    # Otherwise, treat as complete if ANY split part exists.
-    # This avoids waiting forever when EE uses an unexpected number of splits.
-    for f in drive_files:
-        m = SPLIT_RE.search(f)
-        if m and int(m.group(1)) == tile_id:
-            return True
-
-    return False
-
-
-def setup_batch_dirs():
-    """Clear and recreate batch directories to prevent ghost files (Fix #2)."""
-    if os.path.exists(RAW_DIR):
-        shutil.rmtree(RAW_DIR)
-    if os.path.exists(SCALED_DIR):
-        shutil.rmtree(SCALED_DIR)
-    os.makedirs(RAW_DIR)
-    os.makedirs(SCALED_DIR)
-
-
-def download_file(filename):
-    subprocess.run([
-        'rclone', 'copy',
-        f'{RCLONE_REMOTE}:{GDRIVE_FOLDER}/{filename}',
-        RAW_DIR,
-        '--stats', '5s',
-        '--stats-one-line'
-    ], check=True)
-
-
-def scale_tile_to_u8(filename: str) -> str:
-    """
-    Convert 4-band GeoTIFF to Byte 0..255.
-    Reads from RAW_DIR, writes to SCALED_DIR.
-    Returns the output filename.
+    Convert 4-band GeoTIFF to Byte and apply fixed scale 0..12520 -> 0..255.
+    Returns output path.
     """
     in_path = os.path.join(RAW_DIR, filename)
     base, ext = os.path.splitext(filename)
@@ -163,69 +108,76 @@ def save_state(state):
     state['last_updated'] = datetime.now().isoformat()
     with open(STATE_FILE, 'w') as f:
         json.dump(state, f, indent=2)
+    print(f"✓ State saved to {STATE_FILE}")
 
+def generate_arid_tiles():
+    """Generate list of all arid tile IDs (from shapefile intersection)."""
+    # Check if cached
+    if os.path.exists('arid_tile_ids.json'):
+        print("Loading cached arid tile IDs...")
+        with open('arid_tile_ids.json', 'r') as f:
+            return json.load(f)
+    
+    print("\n" + "="*80)
+    print("Generating arid tile IDs from shapefile...")
+    print("This is slow first time but results are cached.")
+    print("="*80)
+    
+    import geopandas as gpd
+    from shapely.geometry import box
+    
+    # Load shapefile
+    shapefile_path = resolve_arid_shapefile()
+    if shapefile_path is None:
+        print("ERROR: Arid shapefile directory not found.")
+        print("Expected one of: Africa_Arid_Regions_All-shp, SSA_All_Arid_by_Country-shp")
+        return []
+    
+    print("Loading shapefile...")
+    arid_gdf = gpd.read_file(shapefile_path)
+    if arid_gdf.crs != 'EPSG:4326':
+        print(f"Converting from {arid_gdf.crs} to EPSG:4326...")
+        arid_gdf = arid_gdf.to_crs('EPSG:4326')
+    
+    print("Creating union of arid regions...")
+    arid_union = arid_gdf.union_all() if hasattr(arid_gdf, "union_all") else arid_gdf.unary_union
+    
+    # Generate all tiles
+    AFRICA_BBOX = [-17.6, -35.0, 51.4, 37.3]
+    GRID_SIZE = 2.0
+    
+    print("Checking tile intersections...")
+    arid_tile_ids = []
+    tile_id = 0
+    lon = AFRICA_BBOX[0]
+    
+    while lon < AFRICA_BBOX[2]:
+        lat = AFRICA_BBOX[1]
+        while lat < AFRICA_BBOX[3]:
+            bbox = [lon, lat, 
+                   min(lon + GRID_SIZE, AFRICA_BBOX[2]),
+                   min(lat + GRID_SIZE, AFRICA_BBOX[3])]
+            
+            tile_poly = box(*bbox)
+            
+            if tile_poly.intersects(arid_union):
+                arid_tile_ids.append(tile_id)
+            
+            tile_id += 1
+            lat += GRID_SIZE
+        lon += GRID_SIZE
+    
+    # Cache it
+    print(f"Caching {len(arid_tile_ids)} arid tiles...")
+    with open('arid_tile_ids.json', 'w') as f:
+        json.dump(arid_tile_ids, f)
+    
+    print(f"✓ Found {len(arid_tile_ids)} arid tiles (cached to arid_tile_ids.json)")
+    return arid_tile_ids
 
-def ensure_cache_dirs():
-    os.makedirs(RAW_CACHE_DIR, exist_ok=True)
-    os.makedirs(SCALED_CACHE_DIR, exist_ok=True)
-
-
-def cache_raw_path(filename: str) -> str:
-    return os.path.join(RAW_CACHE_DIR, filename)
-
-
-def cache_scaled_path(out_name: str) -> str:
-    return os.path.join(SCALED_CACHE_DIR, out_name)
-
-
-def file_ok(path: str, min_bytes: int = 1024) -> bool:
-    # cheap “not empty / not obviously broken” check
-    return os.path.exists(path) and os.path.getsize(path) >= min_bytes
-
-def delete_drive_files(filenames: list[str]) -> None:
-    """
-    Delete exact file objects from Drive. This avoids tile_id ambiguity.
-    """
-    if not filenames:
-        return
-
-    for i, name in enumerate(filenames, 1):
-        print(f"  [{i}/{len(filenames)}] deleting {name}...", end=" ", flush=True)
-        r = subprocess.run(
-            ["rclone", "deletefile", f"{RCLONE_REMOTE}:{GDRIVE_FOLDER}/{name}"],
-            capture_output=True, text=True
-        )
-        if r.returncode == 0:
-            print("✓")
-        else:
-            print("✗")
-            if r.stderr:
-                print(r.stderr)
-
-    # optional, but keeps Drive clean
-    subprocess.run(["rclone", "cleanup", f"{RCLONE_REMOTE}:"], capture_output=True)
-
-def process_tiles_with_copy(tile_ids_to_process):
-    """
-    Main processing logic with caching.
-    - Keeps isolated batch dirs (RAW_DIR, SCALED_DIR) but avoids re-downloading/rescaling
-      by using persistent caches (RAW_CACHE_DIR, SCALED_CACHE_DIR).
-    """
-
-    processed_files = []   # drive filenames successfully scaled and included in detection
-    failed_files = []      # drive filenames that ultimately failed
-    batch_list_files = []  # scaled filenames (local) written to _batch_list.txt
-
-
-    print(f"\nProcessing batch of {len(tile_ids_to_process)} tiles...")
-
-    ensure_cache_dirs()
-
-    # 1) Clean workspace (batch dirs only)
-    setup_batch_dirs()
-
-    # 2) Map Tile IDs to Files in Drive
-    print("Listing files in Drive to build file groups...")
+def check_gdrive_contents():
+    """Check what tiles are currently in Google Drive."""
+    print("Checking Google Drive contents...")
     result = subprocess.run(
         ['rclone', 'lsf', f'{RCLONE_REMOTE}:{GDRIVE_FOLDER}'],
         capture_output=True, text=True

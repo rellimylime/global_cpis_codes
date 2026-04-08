@@ -1,0 +1,30 @@
+{
+  "generated_at": "2026-03-07T01:14:30.105655+00:00",
+  "model_type": "xgboost",
+  "train_rows": 234,
+  "val_rows": 185,
+  "average_precision": 0.05243579374935524,
+  "class_balance": {
+    "train_pos_before_downsample": 26,
+    "train_neg_before_downsample": 710,
+    "train_pos_after_downsample": 26,
+    "train_neg_after_downsample": 208,
+    "val_pos": 7,
+    "val_neg": 178
+  },
+  "downsample": {
+    "enabled": true,
+    "applied": true,
+    "ratio": 8.0,
+    "pos": 26,
+    "neg_before": 710,
+    "neg_after": 208,
+    "min_negatives": 80
+  },
+  "sample_weight_column": "sample_weight",
+  "threshold_policies": {
+    "precision_first": 0.5,
+    "balanced": 0.15624362230300903,
+    "recall_first": 0.00443035876378417
+  }
+}

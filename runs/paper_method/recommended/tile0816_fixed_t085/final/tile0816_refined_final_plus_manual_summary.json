@@ -1,0 +1,23 @@
+{
+  "generated_at": "2026-03-09T18:05:50.539272+00:00",
+  "base_final_path": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\runs\\paper_method\\recommended\\tile0816_fixed_t085\\final\\tile0816_refined_final.shp",
+  "manual_points_path": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\runs\\paper_method\\recommended\\tile0816_fixed_t085\\final\\tile0816_manual_missed_points.gpkg",
+  "manual_points_layer": "tile0816_manual_missed_points",
+  "base_count": 38,
+  "manual_points_input": 168,
+  "manual_points_covered_by_existing": 0,
+  "manual_points_added": 168,
+  "final_count": 206,
+  "default_radius_m": 265.565,
+  "added_radius_m_stats": {
+    "min": 153.434,
+    "median": 230.877,
+    "max": 372.702
+  },
+  "outputs": {
+    "final_plus_manual_shp": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\runs\\paper_method\\recommended\\tile0816_fixed_t085\\final\\tile0816_refined_final_plus_manual.shp",
+    "final_plus_manual_gpkg": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\runs\\paper_method\\recommended\\tile0816_fixed_t085\\final\\tile0816_refined_final_plus_manual.gpkg",
+    "manual_polygons_added": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\runs\\paper_method\\recommended\\tile0816_fixed_t085\\final\\tile0816_manual_missed_polygons.shp"
+  },
+  "radius_policy": "nearest_existing_polygon_area_derived_radius_m"
+}

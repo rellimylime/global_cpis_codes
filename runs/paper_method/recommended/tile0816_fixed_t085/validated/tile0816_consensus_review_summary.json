@@ -1,0 +1,16 @@
+{
+  "generated_at": "2026-03-09T17:23:57.811273+00:00",
+  "input_layer": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\runs\\paper_method\\recommended\\tile0816_fixed_t085\\fixed_t085_consensus_support2.shp",
+  "output_dir": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\runs\\paper_method\\recommended\\tile0816_fixed_t085\\validated",
+  "total_rows": 35,
+  "label_counts": {
+    "1": 34,
+    "0": 1,
+    "other": 0
+  },
+  "outputs": {
+    "true": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\runs\\paper_method\\recommended\\tile0816_fixed_t085\\validated\\tile0816_consensus_true.shp",
+    "false": "C:\\Users\\ermil\\Documents\\global_cpis_codes\\runs\\paper_method\\recommended\\tile0816_fixed_t085\\validated\\tile0816_consensus_false.shp",
+    "other": null
+  }
+}
