@@ -1,0 +1,16 @@
+/home/ermiller/.conda/envs/cpi_fix/lib/python3.10/site-packages/mmcv/__init__.py:20: UserWarning: On January 1, 2023, MMCV will release v2.0.0, in which it will remove components related to the training process and add a data transformation module. In addition, it will rename the package names mmcv to mmcv-lite and mmcv-full to mmcv. See https://github.com/open-mmlab/mmcv/blob/master/docs/en/compatibility.md for more details.
+  warnings.warn(
+1.load image list. done.
+2.build model. /home/ermiller/.conda/envs/cpi_fix/lib/python3.10/site-packages/mmdet/models/builder.py:51: UserWarning: train_cfg and test_cfg is deprecated, please specify them in model
+  warnings.warn(
+done.
+3. Detect images.
+===================
+Detect image africa_s2_2021_tile_0816-0000011776-0000000000_rgbnir_u8
+
+done.
+
+Detection.
+1.build model. done.
+2.build data loader. done.
+3.detect.
