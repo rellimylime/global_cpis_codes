@@ -39,7 +39,8 @@ def train_detector(model,
                    distributed=False,
                    validate=False,
                    timestamp=None,
-                   meta=None):
+                   meta=None,
+                   device='cuda'):
     logger = get_root_logger(cfg.log_level)
 
     # prepare data loaders
@@ -69,8 +70,11 @@ def train_detector(model,
             seed=cfg.seed) for ds in dataset
     ]
 
-    # put model on gpus
+    # put model on execution device
+    device = str(device).strip().lower()
     if distributed:
+        if device != 'cuda':
+            raise RuntimeError('Distributed training only supports device=cuda')
         find_unused_parameters = cfg.get('find_unused_parameters', False)
         # Sets the `find_unused_parameters` parameter in
         # torch.nn.parallel.DistributedDataParallel
@@ -80,8 +84,13 @@ def train_detector(model,
             broadcast_buffers=False,
             find_unused_parameters=find_unused_parameters)
     else:
-        model = MMDataParallel(
-            model.cuda(cfg.gpu_ids[0]), device_ids=cfg.gpu_ids)
+        if device == 'cuda':
+            model = MMDataParallel(
+                model.cuda(cfg.gpu_ids[0]), device_ids=cfg.gpu_ids)
+        elif device == 'cpu':
+            model = model.cpu()
+        else:
+            raise RuntimeError(f'Unsupported device={device}')
 
     # build runner
     optimizer = build_optimizer(model, cfg.optimizer)

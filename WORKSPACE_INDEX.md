@@ -1,11 +1,13 @@
 # Workspace Index (Post-Cleanup)
 
-Last updated: 2026-03-09
+Last updated: 2026-04-06
 
 ## Quick Navigation
 
 - `START_HERE.md`
+- `CLAUDE_CODE_HANDOFF.md`
 - `README.md`
+- `docs/references/chen_et_al/`
 
 ## Active Working Areas
 
@@ -21,15 +23,35 @@ Last updated: 2026-03-09
   - `assets/regions/`
 - Test imagery:
   - `imgs_test/`
-- Current paper-method review outputs:
+- Legacy paper-method review outputs:
   - `runs/paper_method/recommended/tile0816_fixed_t085/`
   - `runs/paper_method/recommended/tile0816_fixed_t085/final/no_radius_mode/`
 - New method run root:
   - `runs/new_method/centerpoint_v1/`
+  - `runs/new_method/rse2023_2015_v1/`
 - New method docs:
   - `docs/new_method/README.md`
+  - `docs/new_method/workflow.md`
+  - `docs/new_method/workflow_file_inventory.md`
+  - `docs/new_method/rse2023_2015_v1.md`
+  - `docs/new_method/ignore_rules.md`
 
-## Active Final Outputs (No Radius Inference Mode)
+Repo root is intentionally kept narrow after cleanup. The active surface should
+mostly be:
+
+- code and configs
+- docs
+- `runs/`
+- `archive/`
+- `imgs_cache_raw/`
+- `imgs_cache_u8/`
+- the current top-level active logs
+
+For repo-facing orientation, prefer `CLAUDE_CODE_HANDOFF.md` over raw runtime
+artifacts. Most measured state still lives in local `runs/` outputs and logs,
+but the handoff doc summarizes the parts that are safe and useful to push.
+
+## Legacy Final Outputs (No Radius Inference Mode)
 
 Convenience package (single folder):
 
@@ -50,6 +72,8 @@ Convenience package (single folder):
 Archive root:
 
 - `archive/2026-03-09_cleanup/`
+- `archive/2026-03-18_workspace_cleanup/`
+- `archive/2026-03-18_whole_house_cleanup/`
 
 Main archive buckets:
 
@@ -66,6 +90,26 @@ Archive documentation and inventory:
 - `archive/2026-03-09_cleanup/README.md`
 - `archive/2026-03-09_cleanup/ARCHIVE_MANIFEST.json`
 - `archive/2026-03-09_cleanup/ARCHIVE_MANIFEST.csv`
+- `archive/2026-03-18_workspace_cleanup/README.md`
+- `archive/2026-03-18_workspace_cleanup/ARCHIVE_SUMMARY.json`
+- `archive/2026-03-18_workspace_cleanup/MANIFEST.txt`
+- `archive/2026-03-18_whole_house_cleanup/README.md`
+- `archive/2026-03-18_whole_house_cleanup/ARCHIVE_SUMMARY.json`
+- `archive/2026-03-18_whole_house_cleanup/MANIFEST.txt`
+
+Home-directory cleanup outside the repo:
+
+- `/home/ermiller/archive/2026-03-18_home_cleanup/`
+
+Current live top-level run logs after the 2026-03-18 cleanup:
+
+- local-only `cpis_*.log` / `cpis_*.err` files may appear during active jobs
+- they are useful for debugging but not meant to be the primary repo handoff
+
+Most recent completed refine logs were archived to:
+
+- `archive/2026-03-18_workspace_cleanup/top_level_logs/cpis_2015_aug_refine_176750.log`
+- `archive/2026-03-18_workspace_cleanup/top_level_logs/cpis_2015_aug_refine_176750.err`
 
 ## Pending Locked Items
 

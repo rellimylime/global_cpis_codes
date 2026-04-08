@@ -1,7 +1,14 @@
-# Server AI Handoff (Tile 0816 Checkpoint)
+# Server AI Handoff (Legacy Tile 0816 Checkpoint)
 
 This file is for server-side AI agents so they can quickly understand what is
 committed, what is authoritative, and how artifacts were produced.
+
+This is a legacy handoff for the older tile-0816 paper-method branch. For the
+current active 2015/2021 workflow, use:
+
+- `WORKSPACE_INDEX.md`
+- `docs/new_method/workflow.md`
+- `docs/new_method/rse2023_2015_v1.md`
 
 ## Snapshot
 

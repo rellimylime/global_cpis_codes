@@ -31,6 +31,13 @@ cpis_*.err
 gee_export_progress.json
 africa_processing_progress.json
 africa_tiles_2021_*.json
+.claude
+.claude/
+.codex
+.codex/
+INFO
+cpis_*.log
+cpis_*.err
 
 # Final outputs (user-specific)
 africa_cpis_2021.*

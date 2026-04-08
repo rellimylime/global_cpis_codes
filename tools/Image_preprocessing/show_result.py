@@ -179,6 +179,8 @@ def union_segm(
 
     return last_save_file
 
+        last_save_file = save_file
+
     return last_save_file
 
 
@@ -257,24 +259,25 @@ def show_result(
 
     # NMS
     print("3.NMS.", end=' ')
-    stdout_off()
-    nms_cfg = dict(
-        type='nms',
-        iou_threshold=nms_iou_thr
-    )
+    nms_cfg = dict(type='nms', iou_threshold=nms_iou_thr)
 
-    seg_path = union_segm(
-        js_data=result_json,
-        nms_cfg=nms_cfg,
-        merge_cats=nms_merge_cats,
-        score_thr=score_thr,
-        save_path=os.path.split(res_js_file)[0],
-        ori_img_path=ori_img_path,
-        ref_json = ref_json
-    )
+    try:
+        stdout_off()
+        seg_path = union_segm(
+            js_data=result_json,
+            nms_cfg=nms_cfg,
+            merge_cats=nms_merge_cats,
+            score_thr=score_thr,
+            save_path=os.path.split(res_js_file)[0],
+            ori_img_path=ori_img_path,
+            ref_json=ref_json
+        )
+    finally:
+        stdout_on()
 
     if seg_path is None:
-        print("✓ Detection results saved (visualization skipped)")
+        print("No detections after postprocess (seg_path=None).")
+    else:
+        print("done.")
 
     return seg_path
-

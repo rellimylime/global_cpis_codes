@@ -11,6 +11,7 @@ import pandas as pd
 from shapely.geometry import Point
 
 from cpis.common.file_utils import ensure_dir, save_json
+from cpis.common.geo_utils import circle_polygon_wgs84
 from cpis.common.logging_utils import build_logger
 from cpis.common.region_filter import RegionMask
 from cpis.common.time_utils import utc_now_iso
@@ -71,8 +72,35 @@ def _stratified_sample(df: pd.DataFrame, n: int, seed: int) -> pd.DataFrame:
     return out
 
 
+def _top_confidence_sample(df: pd.DataFrame, n: int) -> pd.DataFrame:
+    if n <= 0 or len(df) <= n:
+        return df.copy()
+
+    work = df.copy()
+    if "geom_score" not in work.columns:
+        return work.head(n).copy()
+
+    work["_rank_score"] = pd.to_numeric(work["geom_score"], errors="coerce").fillna(0.0)
+    if "ring_contrast" in work.columns:
+        work["_rank_score"] += pd.to_numeric(work["ring_contrast"], errors="coerce").fillna(0.0)
+    if "texture_score" in work.columns:
+        work["_rank_score"] += 0.25 * pd.to_numeric(work["texture_score"], errors="coerce").fillna(0.0)
+    work = work.sort_values(["_rank_score", "tile_id"], ascending=[False, True], na_position="last")
+    return work.head(n).drop(columns=["_rank_score"], errors="ignore").copy()
+
+
 def _split_tokens(raw: str) -> set[str]:
     return {t.strip().lower() for t in str(raw).split(",") if t.strip()}
+
+
+def _read_tile_list(path: Path) -> set[str]:
+    names: set[str] = set()
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        names.add(Path(line).stem)
+    return names
 
 
 def _ensure_point_columns(
@@ -251,6 +279,15 @@ def run_make_label_pack(args: argparse.Namespace) -> int:
     tile_id_arg = str(getattr(args, "tile_id", "")).strip()
     if tile_id_arg and "tile_id" in df.columns:
         df = df[df["tile_id"].astype(str) == tile_id_arg].copy()
+    tile_list_arg = str(getattr(args, "tile_list_file", "")).strip()
+    if tile_list_arg:
+        tile_list_path = Path(tile_list_arg)
+        if not tile_list_path.exists():
+            raise FileNotFoundError(f"Tile list file not found: {tile_list_path}")
+        requested_tiles = _read_tile_list(tile_list_path)
+        if "tile_id" not in df.columns:
+            raise RuntimeError("Tile-list filtering requires a tile_id column in the candidates table.")
+        df = df[df["tile_id"].astype(str).isin(requested_tiles)].copy()
     if df.empty:
         raise RuntimeError("No rows after year/tile filters.")
 
@@ -296,7 +333,16 @@ def run_make_label_pack(args: argparse.Namespace) -> int:
             if df.empty:
                 raise RuntimeError("No rows after water filter.")
 
-    picked = _stratified_sample(df, n=int(args.sample_n), seed=int(args.seed))
+    sampling_mode = str(getattr(args, "sampling_mode", "stratified")).strip().lower()
+    if sampling_mode == "top":
+        picked = _top_confidence_sample(df, n=int(args.sample_n))
+    elif sampling_mode == "random":
+        if int(args.sample_n) <= 0 or len(df) <= int(args.sample_n):
+            picked = df.copy()
+        else:
+            picked = df.sample(n=int(args.sample_n), random_state=int(args.seed)).copy()
+    else:
+        picked = _stratified_sample(df, n=int(args.sample_n), seed=int(args.seed))
     picked = picked.copy()
     picked["label"] = -1
     picked["review_status"] = "todo"
@@ -316,8 +362,39 @@ def run_make_label_pack(args: argparse.Namespace) -> int:
         gpkg_path = out_dir / "label_candidates.gpkg"
         gdf.to_file(gpkg_path, driver="GPKG")
         log(f"Wrote label GeoPackage: {gpkg_path}")
+
+        radius_series = None
+        if "radius_m" in picked.columns:
+            radius_series = pd.to_numeric(picked["radius_m"], errors="coerce")
+        elif {"radius_px", "pixel_size_m"}.issubset(set(picked.columns)):
+            radius_series = (
+                pd.to_numeric(picked["radius_px"], errors="coerce")
+                * pd.to_numeric(picked["pixel_size_m"], errors="coerce")
+            )
+
+        if radius_series is not None and bool(radius_series.notna().any()):
+            circle_df = picked.copy()
+            circle_df["draft_radius_m"] = radius_series
+            circle_df = circle_df[circle_df["draft_radius_m"].notna() & (circle_df["draft_radius_m"] > 0)].copy()
+            circle_gdf = gpd.GeoDataFrame(
+                circle_df,
+                geometry=[
+                    circle_polygon_wgs84(float(lon), float(lat), float(radius_m), n_points=int(args.circle_vertices))
+                    for lon, lat, radius_m in zip(
+                        circle_df["center_lon"], circle_df["center_lat"], circle_df["draft_radius_m"]
+                    )
+                ],
+                crs="EPSG:4326",
+            )
+            circle_gpkg_path = out_dir / "label_candidate_circles.gpkg"
+            circle_gdf.to_file(circle_gpkg_path, driver="GPKG")
+            log(f"Wrote draft circle GeoPackage: {circle_gpkg_path}")
+        else:
+            circle_gpkg_path = None
+            log("No usable radius information found; skipped draft circle GeoPackage.")
     else:
         gpkg_path = None
+        circle_gpkg_path = None
         log("center_lon/center_lat not present; skipped GPKG export.")
 
     instructions = out_dir / "LABELING_INSTRUCTIONS.txt"
@@ -328,7 +405,8 @@ def run_make_label_pack(args: argparse.Namespace) -> int:
             "  0 = not a center pivot\n"
             " -1 = unlabeled (default)\n\n"
             "QGIS workflow:\n"
-            "1) Open label_candidates.gpkg (or CSV as point layer).\n"
+            "1) Open label_candidates.gpkg as centers and, if present,\n"
+            "   label_candidate_circles.gpkg as draft circle polygons.\n"
             "2) Overlay on imagery.\n"
             "3) Edit field 'label' for each candidate.\n"
             "4) Save layer, then run:\n"
@@ -348,13 +426,16 @@ def run_make_label_pack(args: argparse.Namespace) -> int:
             "rows_selected": int(len(picked)),
             "year_filter": year_arg if year_arg > 0 else None,
             "tile_id_filter": tile_id_arg if tile_id_arg else None,
+            "tile_list_file": str(Path(tile_list_arg).resolve()) if tile_list_arg else "",
             "region_mask": str(Path(region_mask_arg).resolve()) if region_mask_arg else "",
             "exclude_water": bool(getattr(args, "exclude_water", False)),
             "water_ndwi_threshold": float(getattr(args, "water_ndwi_threshold", 0.0)),
             "water_drop_nan": bool(getattr(args, "water_drop_nan", False)),
             "water_column": water_column,
+            "sampling_mode": sampling_mode,
             "label_csv": str(csv_path.resolve()),
             "label_gpkg": str(gpkg_path.resolve()) if gpkg_path else "",
+            "label_circle_gpkg": str(circle_gpkg_path.resolve()) if circle_gpkg_path else "",
         },
     )
     return 0
@@ -632,10 +713,18 @@ def build_parser(subparsers) -> None:
     p1.add_argument("--sample-n", type=int, default=300, help="Max candidates to sample for labeling")
     p1.add_argument("--year", type=int, default=0, help="Optional year filter; 0 disables year filtering")
     p1.add_argument("--tile-id", default="", help="Optional exact tile_id filter")
+    p1.add_argument("--tile-list-file", default="", help="Optional newline-delimited list of tile_ids to keep")
     p1.add_argument("--region-mask", default="", help="Optional GeoJSON region mask to drop ocean/out-of-scope points")
     p1.add_argument("--exclude-water", action="store_true", help="Drop likely-water candidates using NDWI field")
     p1.add_argument("--water-ndwi-threshold", type=float, default=0.0, help="Water threshold; keep NDWI < this value")
     p1.add_argument("--water-drop-nan", action="store_true", help="Drop rows with missing NDWI when exclude-water is enabled")
+    p1.add_argument(
+        "--sampling-mode",
+        default="stratified",
+        choices=["stratified", "top", "random"],
+        help="How to choose the review subset; use 'top' for obvious high-confidence circles",
+    )
+    p1.add_argument("--circle-vertices", type=int, default=64, help="Vertex count for draft candidate circle polygons")
     p1.add_argument("--seed", type=int, default=42, help="Sampling seed")
     p1.add_argument("--log-file", default="", help="Optional log file")
     p1.set_defaults(func=run_make_label_pack)

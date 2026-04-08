@@ -1,6 +1,7 @@
 import os.path as osp
 
 import mmcv
+import numpy as np
 
 from mmdet.datasets.builder import PIPELINES
 
@@ -64,6 +65,8 @@ class LoadMultiBandsImageFromFile(object):
         img_mode_idx = [int(c)-1 for c in self.img_mode]
         assert max(img_mode_idx) < band, "band index out of range."
         img = img[:, :, img_mode_idx]
+        if not np.isfinite(img).all():
+            img = np.nan_to_num(img, nan=0.0, posinf=0.0, neginf=0.0)
 
         results['filename'] = filename
         results['ori_filename'] = results['img_info']['filename']

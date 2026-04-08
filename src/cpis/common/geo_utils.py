@@ -139,14 +139,19 @@ def raster_xy_to_wgs84(ds, x: float, y: float) -> tuple[float, float]:
     src = osr.SpatialReference()
     src.ImportFromWkt(wkt)
     _set_traditional_axis_order(src)
+    if bool(src.IsGeographic()):
+        return _normalize_lon_lat(float(mx), float(my))
 
     dst = osr.SpatialReference()
     dst.ImportFromEPSG(4326)
     _set_traditional_axis_order(dst)
 
     ct = osr.CoordinateTransformation(src, dst)
-    out = ct.TransformPoint(mx, my)
-    return _normalize_lon_lat(float(out[0]), float(out[1]))
+    try:
+        out = ct.TransformPoint(mx, my, 0.0)
+        return _normalize_lon_lat(float(out[0]), float(out[1]))
+    except Exception:
+        return _normalize_lon_lat(float(mx), float(my))
 
 
 def raster_pixel_size_m(ds) -> float:

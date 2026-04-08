@@ -7,6 +7,15 @@ from .cocoeval import EvalByRecall, EvalByScore
 from terminaltables import AsciiTable
 
 
+def _call_coco_api(obj, snake_name, camel_name, *args, **kwargs):
+    fn = getattr(obj, snake_name, None)
+    if fn is None:
+        fn = getattr(obj, camel_name, None)
+    if fn is None:
+        raise AttributeError(f"{type(obj).__name__} has neither {snake_name} nor {camel_name}")
+    return fn(*args, **kwargs)
+
+
 def eval_file(gt_file,
               res_file,
               metric="bbox",
@@ -36,8 +45,8 @@ def eval_file(gt_file,
         print('The testing results of the whole dataset is empty.')
 
     area_reg_lbl = [f"{a}" for a in area_rng]
-    catIds = cocoGt.get_cat_ids() if catid == -1 else catid
-    imgIds = cocoGt.get_img_ids()
+    catIds = _call_coco_api(cocoGt, "get_cat_ids", "getCatIds") if catid == -1 else catid
+    imgIds = _call_coco_api(cocoGt, "get_img_ids", "getImgIds")
     iou_type = 'bbox' if metric == 'proposal' else metric
     scoEval = EvalByScore( score_thrs=score_thr,
                             areaReg=area_rng,
@@ -148,6 +157,5 @@ def eval_file(gt_file,
         print(f"AR, 0.50:0.95, small, 100, {recEval.stats[9]}", file=f)
         print(f"AR, 0.50:0.95, medium, 100, {recEval.stats[10]}", file=f)
         print(f"AR, 0.50:0.95, large, 100, {recEval.stats[11]}", file=f)
-
 
 
